@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { ClipboardList, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DashboardTaskTimerAction } from "@/components/dashboard/dashboard-task-timer-action";
@@ -266,10 +266,10 @@ function getContinuationOverview(task: HistoryItem) {
 }
 
 function getTrackedTone(totalMinutes: number) {
-  if (totalMinutes >= 180) return "bg-emerald-50 text-emerald-700";
-  if (totalMinutes >= 60) return "bg-blue-50 text-blue-700";
-  if (totalMinutes > 0) return "bg-amber-50 text-amber-700";
-  return "bg-slate-100 text-slate-600";
+  if (totalMinutes >= 180) return "bg-emerald-500/10 text-emerald-600";
+  if (totalMinutes >= 60) return "bg-blue-500/10 text-blue-600";
+  if (totalMinutes > 0) return "bg-amber-500/10 text-amber-600";
+  return "bg-slate-500/10 text-slate-500";
 }
 
 const compactActionButtonClass = "h-8 rounded-full px-3 text-xs font-semibold";
@@ -744,9 +744,11 @@ export function HistoryTable({
                           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
                             {dateParts.weekday}
                           </p>
-                          <div className="mt-2 flex items-end gap-2">
-                            <span className="text-3xl font-black leading-none text-[var(--foreground)]">{dateParts.day}</span>
-                            <span className="pb-1 text-sm font-semibold text-[var(--muted-foreground)]">{dateParts.monthYear}</span>
+                          <div className="mt-1.5 flex items-end gap-1.5">
+                            <span className="font-mono text-[1.75rem] font-black leading-none tabular-nums text-[var(--foreground)]">
+                              {dateParts.day}
+                            </span>
+                            <span className="pb-0.5 text-[0.78rem] font-semibold text-[var(--muted-foreground)]">{dateParts.monthYear}</span>
                           </div>
                         </div>
                         {recency.label ? <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] ${recency.chip}`}>{recency.label}</span> : null}
@@ -769,23 +771,23 @@ export function HistoryTable({
                             </p>
                           ) : null}
                         </div>
-                        <div className="grid gap-1.5 xl:min-w-[210px]">
-                          <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/35 px-3 py-2 dark:bg-white/5">
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Start</span>
+                        <div className="grid gap-1.5 xl:min-w-[13rem]">
+                          <div className="flex items-center justify-between gap-4 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)]/70 px-2.5 py-1.5">
+                            <span className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Start</span>
                             <div className="text-right">
-                              <p className={`text-sm font-bold ${startedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
+                              <p className={`font-mono text-[0.82rem] font-bold tabular-nums ${startedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
                                 {formatTimeLabel(startedParts)}
                               </p>
-                              <p className="text-xs text-[var(--muted-foreground)]">{startedParts.date}</p>
+                              <p className="text-[0.65rem] text-[var(--muted-foreground)]">{startedParts.date}</p>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/35 px-3 py-2 dark:bg-white/5">
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">End</span>
+                          <div className="flex items-center justify-between gap-4 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)]/70 px-2.5 py-1.5">
+                            <span className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">End</span>
                             <div className="text-right">
-                              <p className={`text-sm font-bold ${endedParts.isLive ? "text-emerald-600" : endedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
+                              <p className={`font-mono text-[0.82rem] font-bold tabular-nums ${endedParts.isLive ? "text-emerald-600" : endedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
                                 {formatTimeLabel(endedParts)}
                               </p>
-                              <p className={`text-xs ${endedParts.isLive ? "text-emerald-600" : "text-[var(--muted-foreground)]"}`}>{endedParts.date}</p>
+                              <p className={`text-[0.65rem] ${endedParts.isLive ? "text-emerald-600" : "text-[var(--muted-foreground)]"}`}>{endedParts.date}</p>
                             </div>
                           </div>
                         </div>
@@ -799,28 +801,25 @@ export function HistoryTable({
                           {formatTrackedMinutes(task.updates[0]?.trackedMinutes ?? 0)}
                         </span>
                         {continuationOverview ? (
-                          <span className="inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                          <span className="inline-flex rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[0.68rem] font-bold text-violet-600">
                             {continuationOverview.totalDays} work day{continuationOverview.totalDays > 1 ? "s" : ""}
                           </span>
                         ) : null}
                         {continuationOverview ? (
-                          <span className="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                          <span className="inline-flex rounded-full bg-sky-500/10 px-2.5 py-0.5 text-[0.68rem] font-bold text-sky-600">
                             Total {formatMinutesAsHours(continuationOverview.overallTrackedMinutes)}
                           </span>
                         ) : null}
                         {overtimeMinutes > 0 ? (
-                          <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                          <span className="inline-flex rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[0.68rem] font-bold text-emerald-600">
                             Overtime {formatMinutes(overtimeMinutes)}
                           </span>
                         ) : null}
                         {autoStopLabel ? (
-                          <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                          <span className="inline-flex rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[0.68rem] font-bold text-amber-600">
                             {autoStopLabel}
                           </span>
                         ) : null}
-                        <span className="inline-flex rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-[var(--muted-foreground)]">
-                          Click row for full details
-                        </span>
                       </div>
                     </TD>
                     <TD className={`${recency.row} min-w-[180px] rounded-r-[22px] border border-l-0 px-4 py-3 text-[var(--foreground)] align-top`} style={rowStyle}>
@@ -829,6 +828,21 @@ export function HistoryTable({
                   </TR>
                 );
               })}
+              {(visibleHistory ?? []).length ? null : (
+                <TR className="border-0">
+                  <TD className="rounded-[1.375rem] border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-10" colSpan={3}>
+                    <div className="flex flex-col items-center justify-center gap-1.5 text-center">
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-violet-500/10 text-violet-500">
+                        <ClipboardList className="h-4 w-4" />
+                      </span>
+                      <p className="text-[0.85rem] font-semibold text-[var(--foreground)]">Nothing logged here yet</p>
+                      <p className="max-w-[42ch] text-[0.78rem] text-[var(--muted-foreground)]">
+                        Saved tasks appear here once a day is planned or reported.
+                      </p>
+                    </div>
+                  </TD>
+                </TR>
+              )}
             </TBody>
           </Table>
         </div>
@@ -876,7 +890,7 @@ export function HistoryTable({
                         <Badge variant={statusVariant(selectedTask.updates[0]?.status)}>
                           {selectedTask.updates[0]?.status ?? "planned"}
                         </Badge>
-                        <span className="rounded-full bg-white/70 px-3 py-1 text-sm font-semibold text-[var(--foreground)]">
+                        <span className="rounded-full bg-[var(--panel-muted)] px-3 py-1 text-sm font-semibold text-[var(--foreground)]">
                           {formatMinutes(selectedTask.updates[0]?.trackedMinutes ?? 0)}
                         </span>
                         {selectedOvertimeMinutes > 0 ? (
@@ -934,11 +948,11 @@ export function HistoryTable({
                       <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">Single-day work summary</p>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                      <span className="rounded-full bg-white/75 px-3 py-1 text-slate-700">1 day</span>
-                      <span className="rounded-full bg-white/75 px-3 py-1 text-slate-700">
+                      <span className="rounded-full bg-[var(--panel-muted)] px-3 py-1 text-[var(--foreground)]">1 day</span>
+                      <span className="rounded-full bg-[var(--panel-muted)] px-3 py-1 text-[var(--foreground)]">
                         Total {formatMinutes(selectedTask.updates[0]?.trackedMinutes ?? 0)}
                       </span>
-                      <span className="rounded-full bg-white/75 px-3 py-1 text-slate-700">
+                      <span className="rounded-full bg-[var(--panel-muted)] px-3 py-1 text-[var(--foreground)]">
                         {toDateOnly(selectedTask.planDate)}
                       </span>
                     </div>
