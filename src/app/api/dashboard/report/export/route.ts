@@ -204,17 +204,21 @@ export async function GET(request: NextRequest) {
       }
       .stat-done .stat-value { color: #0f8f68; }
       .stat-progress .stat-value { color: #1d6fd0; }
+      /*
+       * The frame lives on the wrapper, not the table: a collapsed-border table
+       * does not reliably keep its own outer border once a radius is applied,
+       * which is why the left and right edges went missing.
+       */
       .table-wrap {
         overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 16px;
       }
       table {
         width: 100%;
         min-width: 620px;
         border-collapse: collapse;
         table-layout: fixed;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        overflow: hidden;
       }
       thead {
         background: #eaf0ff;

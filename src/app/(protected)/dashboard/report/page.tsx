@@ -56,6 +56,8 @@ function statusLabel(status: "done" | "in_progress" | "pending") {
   return "Pending";
 }
 
+// Shared by the header row and the data rows so the columns can never drift.
+const gridCols = "md:grid-cols-[2.75rem_7rem_minmax(0,1fr)_7.5rem_5.5rem]";
 const dateFieldClass =
   "h-10 w-full rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2.5 text-[0.82rem] text-[var(--foreground)] outline-none transition focus:border-[#4f5ef7]";
 const fieldLabelClass =
@@ -219,23 +221,29 @@ export default async function ReportPage({
         />
 
         <div className="mt-2.5 overflow-hidden rounded-xl border border-[var(--panel-border)]">
-          <div className="hidden gap-3 border-b border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-2 text-[0.62rem] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)] md:grid md:grid-cols-[7rem_minmax(0,1.2fr)_7rem_6rem]">
-            <span>Date</span>
-            <span>Task</span>
-            <span>Status</span>
-            <span className="text-right">Time</span>
+          <div
+            className={`hidden border-b-2 border-[var(--panel-border)] bg-[var(--panel-muted)] text-[0.62rem] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)] md:grid ${gridCols} md:divide-x md:divide-[var(--panel-border)]`}
+          >
+            <span className="px-2 py-2 text-right">#</span>
+            <span className="px-3 py-2">Date</span>
+            <span className="px-3 py-2">Task</span>
+            <span className="px-3 py-2">Status</span>
+            <span className="px-3 py-2 text-right">Time</span>
           </div>
           <div className="divide-y divide-[var(--panel-border)]">
             {summary.items.length ? (
-              summary.items.map((item) => (
+              summary.items.map((item, index) => (
                 <div
-                  className="px-3 py-2.5 transition-colors hover:bg-[var(--panel-muted)] md:grid md:grid-cols-[7rem_minmax(0,1.2fr)_7rem_6rem] md:items-center md:gap-3"
+                  className={`px-3 py-2.5 transition-colors even:bg-[var(--panel-muted)]/60 hover:bg-[var(--panel-alt)] md:grid ${gridCols} md:items-center md:divide-x md:divide-[var(--panel-border)] md:px-0 md:py-0`}
                   key={item.id}
                 >
-                  <p className="font-mono text-[0.72rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+                  <p className="hidden font-mono text-[0.7rem] font-semibold tabular-nums text-[var(--muted-foreground)] md:block md:px-2 md:py-2.5 md:text-right">
+                    {String(index + 1).padStart(2, "0")}
+                  </p>
+                  <p className="font-mono text-[0.72rem] font-semibold tabular-nums text-[var(--muted-foreground)] md:px-3 md:py-2.5">
                     {item.date}
                   </p>
-                  <div className="mt-1.5 min-w-0 md:mt-0">
+                  <div className="mt-1.5 min-w-0 md:mt-0 md:px-3 md:py-2.5">
                     <div className="flex flex-wrap items-center gap-2 md:block">
                       <p className="line-clamp-1 break-words text-[0.82rem] font-semibold text-[var(--foreground)]">
                         {item.title}
@@ -250,12 +258,12 @@ export default async function ReportPage({
                       {[item.departmentName, item.description || item.note || "No extra details"].join(" · ")}
                     </p>
                   </div>
-                  <div className="mt-2 hidden md:mt-0 md:block">
+                  <div className="mt-2 hidden md:mt-0 md:block md:px-3 md:py-2.5">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[0.65rem] font-bold ${statusTone(item.status)}`}>
                       {statusLabel(item.status)}
                     </span>
                   </div>
-                  <p className="mt-2 font-mono text-[0.76rem] font-bold tabular-nums text-[var(--foreground)] md:mt-0 md:text-right">
+                  <p className="mt-2 font-mono text-[0.76rem] font-bold tabular-nums text-[var(--foreground)] md:mt-0 md:px-3 md:py-2.5 md:text-right">
                     {formatMinutes(item.trackedMinutes)}
                   </p>
                 </div>
