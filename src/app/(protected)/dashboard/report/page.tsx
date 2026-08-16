@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2, ClipboardList, Clock3, Download, FileClock, PlayCircle, Search } from "lucide-react";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { PanelHeader } from "@/components/dashboard/panel-header";
 import { requireEmployee } from "@/lib/auth/server";
 import { buildReportSummary } from "@/lib/report-summary";
@@ -126,29 +127,13 @@ export default async function ReportPage({
 
   return (
     <div className="flex flex-col gap-3 sm:gap-4">
-      <section
-        className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
-        data-page-section
-      >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] bg-[linear-gradient(140deg,#6172ff_0%,#7c6cf8_46%,#a855f7_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.38),inset_0_0_0_1px_rgba(255,255,255,0.22),0_4px_10px_rgba(79,94,247,0.26),0_10px_24px_rgba(139,92,246,0.24)]">
-            <FileClock className="h-4.5 w-4.5" strokeWidth={2.3} />
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-[1.05rem] font-semibold leading-tight text-[var(--foreground)] sm:text-[1.18rem] lg:text-xl">
-              Work Report
-            </h1>
-            <p className="truncate text-xs text-[var(--muted-foreground)] sm:text-sm">
-              {formatRangeLabel(rangeFrom, rangeTo)}
-            </p>
-          </div>
-        </div>
-
-        <form
-          action="/dashboard/report"
-          className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-[9rem_9rem_auto_auto] sm:items-end"
-          method="get"
-        >
+      <PageHeader
+        action={
+          <form
+            action="/dashboard/report"
+            className="grid grid-cols-2 gap-2 sm:grid-cols-[9rem_9rem_auto_auto] sm:items-end"
+            method="get"
+          >
           <div>
             <label className={fieldLabelClass} htmlFor="report-from">
               From
@@ -175,8 +160,12 @@ export default async function ReportPage({
             <Download className="h-3.5 w-3.5" />
             Download
           </Link>
-        </form>
-      </section>
+          </form>
+        }
+        icon={FileClock}
+        subtitle={formatRangeLabel(rangeFrom, rangeTo)}
+        title="Work Report"
+      />
 
       <section className="grid gap-2.5 sm:grid-cols-2 2xl:grid-cols-4" data-page-section>
         {summaryTiles.map((tile) => {

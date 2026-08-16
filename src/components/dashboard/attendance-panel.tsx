@@ -1,18 +1,26 @@
 "use client";
 
-import { Clock3, LogIn, LogOut, TimerReset } from "lucide-react";
+import { CalendarCheck2, Clock3, LogIn, LogOut, MailCheck, TimerReset, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { extractAttendanceOvertimeMeta } from "@/lib/attendance-overtime";
 import { Button } from "@/components/ui/button";
 import { clearStoredWorkdayTimer } from "@/components/dashboard/dashboard-workday-timer";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { PanelHeader } from "@/components/dashboard/panel-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMinutes, toDateOnly, toDateTimeInputValue } from "@/lib/utils";
+
+function attendanceStatusTone(status?: string | null) {
+  if (status === "present" || status === "remote") return "bg-emerald-500/10 text-emerald-600";
+  if (status === "late" || status === "half_day") return "bg-amber-500/10 text-amber-600";
+  if (status === "absent") return "bg-rose-500/10 text-rose-600";
+  return "bg-slate-500/10 text-slate-500";
+}
 
 type AttendanceItem = {
   userId: string;
@@ -240,13 +248,20 @@ export function AttendancePanel({
   }
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader>
-          <CardTitle>Attendance</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+    <div className="flex flex-col gap-3 sm:gap-4">
+      <PageHeader
+        icon={CalendarCheck2}
+        subtitle="Log today's check in, check out, and break time."
+        title="Attendance"
+      />
+
+      <div
+        className="dashboard-accent accent-emerald rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        data-dashboard-panel
+      >
+        <PanelHeader icon={CalendarCheck2} title="Today's Attendance" tone="bg-emerald-500/10 text-emerald-500" />
+        <div className="mt-2.5 space-y-3">
+          <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <Label>Status</Label>
@@ -345,88 +360,113 @@ export function AttendancePanel({
             <Textarea onChange={(event) => setNote(event.target.value)} placeholder="Optional attendance note for today." value={note} />
           </div>
           {overtimeMinutes > 0 || autoClosedAt ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[0.8rem] text-amber-700">
               {overtimeMinutes > 0 ? <p>Overtime tracked: {overtimeMinutes} minute(s).</p> : null}
-                        {autoClosedAt ? <p className="mt-1">Main attendance record auto-closed at 7:30 PM.</p> : null}
+              {autoClosedAt ? <p className="mt-1">Main attendance record auto-closed at 7:30 PM.</p> : null}
             </div>
           ) : null}
-          <Button className="button-force-white w-full" disabled={saving} onClick={() => saveAttendance()} type="button">
+          <Button
+            className="button-force-white h-11 w-full rounded-xl bg-[linear-gradient(135deg,#059669_0%,#0d9488_55%,#14b8a6_100%)] text-sm shadow-[0_14px_30px_rgba(16,185,129,0.26)] transition hover:brightness-[1.06] disabled:brightness-100"
+            disabled={saving}
+            onClick={() => saveAttendance()}
+            type="button"
+          >
             {saving ? "Saving attendance..." : "Save Attendance"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {userRole !== "employee" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Team Attendance Today</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 xl:grid-cols-2">
+        <div
+          className="dashboard-accent accent-sky rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          data-dashboard-panel
+        >
+          <PanelHeader
+            action={
+              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+                {(items ?? []).length} people
+              </span>
+            }
+            icon={Users}
+            title="Team Attendance Today"
+            tone="bg-sky-500/10 text-sky-500"
+          />
+          <div className="mt-2.5 grid gap-2 xl:grid-cols-2">
             {(items ?? []).map((item) => {
               const checkInDisplay = formatAttendanceDisplayParts(item.attendance?.checkInAt);
               const checkOutDisplay = formatAttendanceDisplayParts(item.attendance?.checkOutAt);
               const teamAttendanceMeta = extractAttendanceOvertimeMeta(item.attendance?.note);
 
               return (
-              <div key={item.userId} className="rounded-[26px] border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xl font-semibold text-white">{item.name}</p>
-                    <p className="text-sm text-[var(--muted-foreground)]">{item.departmentName}</p>
+              <div
+                key={item.userId}
+                className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-3 transition-colors hover:border-sky-500/30"
+              >
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-[0.88rem] font-bold text-[var(--foreground)]">{item.name}</p>
+                    <p className="truncate text-[0.72rem] text-[var(--muted-foreground)]">{item.departmentName}</p>
                   </div>
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium uppercase tracking-[0.18em] text-amber-600">
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] ${attendanceStatusTone(item.attendance?.status)}`}>
                     {item.attendance?.status ?? "missing"}
                   </span>
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--muted-foreground)]">In</p>
-                    <p className="mt-2 text-lg font-bold leading-none text-white">{checkInDisplay.time}</p>
-                    <div className="mt-1 flex items-center gap-2">
+                <div className="mt-2.5 grid gap-2 md:grid-cols-3">
+                  <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-2.5 py-2">
+                    <p className="text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">In</p>
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                      <p className="font-mono text-[0.95rem] font-bold leading-none tabular-nums text-[var(--foreground)]">
+                        {checkInDisplay.time}
+                      </p>
                       {checkInDisplay.meridiem ? (
-                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-300">
+                        <span className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-600">
                           {checkInDisplay.meridiem}
                         </span>
                       ) : null}
-                      <span className="text-xs text-[var(--muted-foreground)]">{checkInDisplay.date}</span>
                     </div>
+                    <p className="mt-0.5 truncate text-[0.65rem] text-[var(--muted-foreground)]">{checkInDisplay.date}</p>
                   </div>
-                  <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--muted-foreground)]">Out</p>
-                    <p className="mt-2 text-lg font-bold leading-none text-white">{checkOutDisplay.time}</p>
-                    <div className="mt-1 flex items-center gap-2">
+                  <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-2.5 py-2">
+                    <p className="text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Out</p>
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                      <p className="font-mono text-[0.95rem] font-bold leading-none tabular-nums text-[var(--foreground)]">
+                        {checkOutDisplay.time}
+                      </p>
                       {checkOutDisplay.meridiem ? (
-                        <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-300">
+                        <span className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-sky-600">
                           {checkOutDisplay.meridiem}
                         </span>
                       ) : null}
-                      <span className="text-xs text-[var(--muted-foreground)]">{checkOutDisplay.date}</span>
                     </div>
+                    <p className="mt-0.5 truncate text-[0.65rem] text-[var(--muted-foreground)]">{checkOutDisplay.date}</p>
                   </div>
-                  <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--muted-foreground)]">Worked</p>
-                    <p className="mt-2 text-lg font-bold leading-none text-white">{formatMinutes(item.attendance?.workingMinutes ?? 0)}</p>
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">worked today</p>
+                  <div className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-2.5 py-2">
+                    <p className="text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Worked</p>
+                    <p className="mt-1 font-mono text-[0.95rem] font-bold leading-none tabular-nums text-[var(--foreground)]">
+                      {formatMinutes(item.attendance?.workingMinutes ?? 0)}
+                    </p>
+                    <p className="mt-0.5 text-[0.65rem] text-[var(--muted-foreground)]">today</p>
                   </div>
                 </div>
                 {teamAttendanceMeta.overtimeMinutes > 0 || teamAttendanceMeta.autoClosedAt ? (
-                  <div className="mt-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+                  <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[0.72rem] text-amber-700">
                     {teamAttendanceMeta.overtimeMinutes > 0 ? <p>Overtime: {formatMinutes(teamAttendanceMeta.overtimeMinutes)}</p> : null}
-                      {teamAttendanceMeta.autoClosedAt ? <p className="mt-1">Main record auto-closed at 7:30 PM.</p> : null}
+                    {teamAttendanceMeta.autoClosedAt ? <p className="mt-0.5">Main record auto-closed at 7:30 PM.</p> : null}
                   </div>
                 ) : null}
               </div>
             )})}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Reminder Automation</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-[var(--muted-foreground)]">
-          This reminder tool can send attendance and work follow-up emails automatically. Run it manually from here when needed, or connect it with your scheduler in the background.
+      <div
+        className="dashboard-accent accent-violet rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        data-dashboard-panel
+      >
+        <PanelHeader icon={MailCheck} title="Reminder Automation" tone="bg-violet-500/10 text-violet-500" />
+        <div className="mt-2.5 space-y-3 text-[0.8rem] leading-6 text-[var(--muted-foreground)]">
+          This tool sends attendance and work follow-up emails. Run it manually here, or wire it to your scheduler in the background.
           {userRole !== "employee" ? (
             <div>
               <Button
@@ -451,8 +491,8 @@ export function AttendancePanel({
               </Button>
             </div>
           ) : null}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

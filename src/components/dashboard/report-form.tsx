@@ -493,12 +493,12 @@ export function ReportForm({
         <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-semibold text-white">Employee time tracker</p>
+              <p className="font-semibold text-[var(--foreground)]">Employee time tracker</p>
               <p className="text-sm text-[var(--muted-foreground)]">
                 Start, pause, stop, or instantly mark task end here. Running timers stay alive across page changes until you pause or stop them.
               </p>
             </div>
-            <div className="rounded-full border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-2 text-sm font-semibold text-white">
+            <div className="rounded-full border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-2 text-sm font-semibold text-[var(--foreground)]">
               {formatLiveDuration(totalTrackedSeconds)} tracked today
             </div>
           </div>
@@ -507,7 +507,7 @@ export function ReportForm({
         {(tasks ?? []).map((task, index) => (
           <div key={task.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-base font-semibold text-white">{task.taskTitle}</p>
+              <p className="text-base font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   className="tracker-button tracker-button-start"

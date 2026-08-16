@@ -1,14 +1,27 @@
 "use client";
 
-import { CheckCircle2, ClipboardCheck, CornerDownLeft, Paperclip, SendHorizonal, TimerReset, X } from "lucide-react";
+import {
+  CheckCircle2,
+  CheckSquare2,
+  ClipboardCheck,
+  CornerDownLeft,
+  Inbox,
+  Paperclip,
+  Send,
+  SendHorizonal,
+  TimerReset,
+  UserRoundPlus,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AssignmentReviewControls } from "@/components/dashboard/assignment-review-controls";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { PanelHeader } from "@/components/dashboard/panel-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -494,12 +507,19 @@ export function AssignmentsCenter({
   }
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader>
-          <CardTitle>Assign Task</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_320px]">
+    <div className="flex flex-col gap-3 sm:gap-4">
+      <PageHeader
+        icon={CheckSquare2}
+        subtitle="Hand work to teammates and track what came back."
+        title="Assignments"
+      />
+
+      <div
+        className="dashboard-accent accent-indigo rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        data-dashboard-panel
+      >
+        <PanelHeader icon={UserRoundPlus} title="Assign Task" />
+        <div className="mt-2.5 grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_20rem]">
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
@@ -571,7 +591,7 @@ export function AssignmentsCenter({
                 className="mt-2 flex cursor-pointer items-center justify-between rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-3 text-sm text-[var(--foreground)]"
                 htmlFor={assignmentFileInputId}
               >
-                <span className="inline-flex items-center gap-2 rounded-xl bg-[#4f5ef7] px-3 py-2 text-xs font-semibold text-white">
+                <span className="inline-flex items-center gap-2 rounded-xl bg-[#4f5ef7] px-3 py-2 text-xs font-semibold text-[var(--foreground)]">
                   <Paperclip className="h-3.5 w-3.5" />
                   Choose Files
                 </span>
@@ -609,21 +629,31 @@ export function AssignmentsCenter({
               <p>The assignee can work, track time, attach files, and submit directly from the assignment popup.</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Assigned By Me</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+      <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
+        <div
+          className="dashboard-accent accent-sky rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          data-dashboard-panel
+        >
+          <PanelHeader
+            action={
+              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+                {assignedByMe.length}
+              </span>
+            }
+            icon={Send}
+            title="Assigned By Me"
+            tone="bg-sky-500/10 text-sky-500"
+          />
+          <div className="mt-2.5 space-y-2">
             {assignedByMe.length ? (
               (assignedByMe ?? []).map((task) => (
                 <div key={task.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-white">{task.taskTitle}</p>
+                      <p className="font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
                       <p className="text-sm text-[var(--muted-foreground)]">
                         To: {task.user.name} - {task.user.department?.name ?? task.department.name}
                       </p>
@@ -634,7 +664,7 @@ export function AssignmentsCenter({
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-3">
                     <div className="text-sm text-[var(--muted-foreground)]">
                       Latest note:
-                      <span className="ml-2 text-white">{task.updates[0]?.note || "No submission note yet."}</span>
+                      <span className="ml-2 font-medium text-[var(--foreground)]">{task.updates[0]?.note || "No submission note yet."}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <AssignmentReviewControls latestReview={task.latestReview} mode="assigner" taskId={task.id} taskTitle={task.taskTitle} />
@@ -654,22 +684,37 @@ export function AssignmentsCenter({
                 </div>
               ))
             ) : (
-              <p className="text-sm text-[var(--muted-foreground)]">No assignment created by you today.</p>
+              <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-6 text-center">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/10 text-sky-500">
+                  <Send className="h-4 w-4" />
+                </span>
+                <p className="text-[0.8rem] font-medium text-[var(--muted-foreground)]">No assignment created by you today.</p>
+              </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Assigned To Me</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div
+          className="dashboard-accent accent-teal rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          data-dashboard-panel
+        >
+          <PanelHeader
+            action={
+              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+                {assignedToMe.length}
+              </span>
+            }
+            icon={Inbox}
+            title="Assigned To Me"
+            tone="bg-teal-500/10 text-teal-500"
+          />
+          <div className="mt-2.5 space-y-2">
             {assignedToMe.length ? (
               (assignedToMe ?? []).map((task) => (
                 <div key={task.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-white">{task.taskTitle}</p>
+                      <p className="font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
                       <p className="text-sm text-[var(--muted-foreground)]">
                         From: {task.assigner?.name ?? "Workspace"} - {task.department.name}
                       </p>
@@ -680,7 +725,7 @@ export function AssignmentsCenter({
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-3">
                     <div className="text-sm text-[var(--muted-foreground)]">
                       Submit note:
-                      <span className="ml-2 text-white">{task.latestReview?.submitNote || task.updates[0]?.note || "Open submit popup and send your update from here."}</span>
+                      <span className="ml-2 font-medium text-[var(--foreground)]">{task.latestReview?.submitNote || task.updates[0]?.note || "Open submit popup and send your update from here."}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
@@ -699,10 +744,15 @@ export function AssignmentsCenter({
                 </div>
               ))
             ) : (
-              <p className="text-sm text-[var(--muted-foreground)]">No task has been assigned to you today.</p>
+              <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-6 text-center">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/10 text-teal-500">
+                  <Inbox className="h-4 w-4" />
+                </span>
+                <p className="text-[0.8rem] font-medium text-[var(--muted-foreground)]">No task has been assigned to you today.</p>
+              </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
       {selectedTask ? (
@@ -710,10 +760,10 @@ export function AssignmentsCenter({
           <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-[var(--panel-border)] bg-[var(--panel)] shadow-2xl">
             <div className="flex items-start justify-between gap-4 border-b border-[var(--panel-border)] px-6 py-5">
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-[#4f5ef7]">
                   {selectedAssignment?.list === "assignedByMe" ? "Assigned By You" : "Assigned To You"}
                 </p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">{selectedTask.taskTitle}</h3>
+                <h3 className="mt-2 text-2xl font-semibold text-[var(--foreground)]">{selectedTask.taskTitle}</h3>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                   {selectedAssignment?.list === "assignedByMe"
                     ? `Assigned to ${selectedTask.user.name}`
@@ -735,7 +785,7 @@ export function AssignmentsCenter({
               <div className="space-y-3 text-sm">
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Assignment Brief</p>
-                  <p className="mt-1 whitespace-pre-line leading-6 text-white/90">
+                  <p className="mt-1 whitespace-pre-line leading-6 text-[var(--foreground)]">
                     {assignmentBrief.text || "No extra assignment brief was added."}
                   </p>
                   {assignmentBrief.attachments.length ? (
@@ -758,26 +808,26 @@ export function AssignmentsCenter({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Tracked</p>
-                    <p className="mt-1 text-white">{latestUpdate?.trackedMinutes ?? 0} min</p>
+                    <p className="mt-1 font-medium text-[var(--foreground)]">{latestUpdate?.trackedMinutes ?? 0} min</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Last Update</p>
-                    <p className="mt-1 text-white">{formatDateTimeInDhaka(latestUpdate?.updatedAt)}</p>
+                    <p className="mt-1 font-medium text-[var(--foreground)]">{formatDateTimeInDhaka(latestUpdate?.updatedAt)}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Started</p>
-                    <p className="mt-1 text-white">{formatDateTimeInDhaka(latestUpdate?.actualStart)}</p>
+                    <p className="mt-1 font-medium text-[var(--foreground)]">{formatDateTimeInDhaka(latestUpdate?.actualStart)}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Ended</p>
-                    <p className="mt-1 text-white">{formatDateTimeInDhaka(latestUpdate?.actualEnd)}</p>
+                    <p className="mt-1 font-medium text-[var(--foreground)]">{formatDateTimeInDhaka(latestUpdate?.actualEnd)}</p>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-1 text-sm">
                 <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Submission / Progress Note</p>
-                <p className="whitespace-pre-line leading-6 text-white/90">{latestUpdate?.note || "No submission note yet."}</p>
+                <p className="whitespace-pre-line leading-6 text-[var(--foreground)]">{latestUpdate?.note || "No submission note yet."}</p>
               </div>
 
               {selectedTask.latestReview ? (
@@ -788,7 +838,7 @@ export function AssignmentsCenter({
                       {selectedTask.latestReview.status}
                     </Badge>
                   </div>
-                  <p className="whitespace-pre-line leading-6 text-white/90">{selectedTask.latestReview.submitNote || "No submit note yet."}</p>
+                  <p className="whitespace-pre-line leading-6 text-[var(--foreground)]">{selectedTask.latestReview.submitNote || "No submit note yet."}</p>
                   {selectedTask.latestReview.submitAttachments?.length ? (
                     <div className="flex flex-wrap gap-2">
                       {selectedTask.latestReview.submitAttachments.map((attachment) => (
@@ -808,7 +858,7 @@ export function AssignmentsCenter({
                   {selectedTask.latestReview.reviewNote || selectedTask.latestReview.reviewAttachments?.length ? (
                     <div className="space-y-2">
                       {selectedTask.latestReview.reviewNote ? (
-                        <p className="whitespace-pre-line leading-6 text-white/70">Reviewer note: {selectedTask.latestReview.reviewNote}</p>
+                        <p className="whitespace-pre-line leading-6 text-[var(--muted-foreground)]">Reviewer note: {selectedTask.latestReview.reviewNote}</p>
                       ) : null}
                       {selectedTask.latestReview.reviewAttachments?.length ? (
                         <div className="flex flex-wrap gap-2">
@@ -835,7 +885,7 @@ export function AssignmentsCenter({
                 <div className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Work Submission</p>
-                    <span className="rounded-full border border-[var(--panel-border)] bg-[var(--panel)] px-3 py-1 text-sm font-semibold text-white">
+                    <span className="rounded-full border border-[var(--panel-border)] bg-[var(--panel)] px-3 py-1 text-sm font-semibold text-[var(--foreground)]">
                       {formatLiveDuration(liveWorkTrackedSeconds)}
                     </span>
                   </div>
@@ -938,7 +988,7 @@ export function AssignmentsCenter({
                       className="mt-2 flex cursor-pointer items-center justify-between rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--foreground)]"
                       htmlFor={`assignment-work-files-${selectedTask.id}`}
                     >
-                      <span className="inline-flex items-center gap-2 rounded-xl bg-[#4f5ef7] px-3 py-2 text-xs font-semibold text-white">
+                      <span className="inline-flex items-center gap-2 rounded-xl bg-[#4f5ef7] px-3 py-2 text-xs font-semibold text-[var(--foreground)]">
                         <Paperclip className="h-3.5 w-3.5" />
                         Choose Files
                       </span>

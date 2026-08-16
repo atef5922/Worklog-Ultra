@@ -1,10 +1,12 @@
 "use client";
 
+import { BellRing, Megaphone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { PanelHeader } from "@/components/dashboard/panel-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -76,13 +78,20 @@ export function NoticesCenter({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-3 sm:gap-4">
+      <PageHeader
+        icon={BellRing}
+        subtitle="Department announcements everyone should see."
+        title="Notices"
+      />
+
       {canPublish ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Publish Notice</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div
+          className="dashboard-accent accent-indigo rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          data-dashboard-panel
+        >
+          <PanelHeader icon={Megaphone} title="Publish Notice" />
+          <div className="mt-2.5 space-y-3">
             <div>
               <Label>Notice Title</Label>
               <Input onChange={(event) => setTitle(event.target.value)} placeholder="Write a short notice title" value={title} />
@@ -107,29 +116,52 @@ export function NoticesCenter({
               <Label>Notice Details</Label>
               <Textarea onChange={(event) => setBody(event.target.value)} placeholder="Write the full notice message" value={body} />
             </div>
-            <Button className="button-force-white bg-[#315fe6] hover:bg-[#274fc0]" disabled={saving} onClick={publishNotice} type="button">
+            <Button
+              className="button-force-white h-10 rounded-xl bg-[#4f5ef7] px-4 text-[0.82rem] shadow-[0_10px_22px_rgba(79,94,247,0.24)] hover:bg-[#4453eb]"
+              disabled={saving}
+              onClick={publishNotice}
+              type="button"
+            >
               {saving ? "Publishing..." : "Publish Notice"}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Notices</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div
+        className="dashboard-accent accent-amber rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        data-dashboard-panel
+      >
+        <PanelHeader
+          action={
+            <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+              {notices.length} active
+            </span>
+          }
+          icon={BellRing}
+          title="Active Notices"
+          tone="bg-amber-500/10 text-amber-500"
+        />
+        <div className="mt-2.5 space-y-2">
           {notices.length ? (
-            (notices ?? []).map((notice) => (
-              <div key={notice.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-base font-semibold text-[var(--foreground)]">{notice.title}</p>
-                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">
-                      {notice.departmentName} · by {notice.authorName}
-                    </p>
+            (notices ?? []).map((notice, index) => (
+              <div
+                key={notice.id}
+                className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-3 transition-colors hover:border-amber-500/30"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2.5">
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-amber-500/10 font-mono text-[0.625rem] font-bold tabular-nums text-amber-600">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="break-words text-[0.88rem] font-bold leading-snug text-[var(--foreground)]">{notice.title}</p>
+                      <p className="mt-0.5 truncate text-[0.65rem] font-bold uppercase tracking-[0.16em] text-amber-600">
+                        {notice.departmentName} · by {notice.authorName}
+                      </p>
+                    </div>
                   </div>
-                  <span className="text-xs text-[var(--muted-foreground)]">
+                  <span className="shrink-0 font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
                     {notice.publishedAt
                       ? new Intl.DateTimeFormat("en-BD", {
                           timeZone: "Asia/Dhaka",
@@ -141,14 +173,19 @@ export function NoticesCenter({
                       : "Just now"}
                   </span>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-[var(--foreground)]">{notice.body}</p>
+                <p className="mt-2 whitespace-pre-line break-words text-[0.8rem] leading-6 text-[var(--foreground)]">{notice.body}</p>
               </div>
             ))
           ) : (
-            <p className="text-sm text-[var(--muted-foreground)]">No active notice right now.</p>
+            <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-6 text-center">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-500">
+                <BellRing className="h-4 w-4" />
+              </span>
+              <p className="text-[0.8rem] font-medium text-[var(--muted-foreground)]">No active notice right now.</p>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

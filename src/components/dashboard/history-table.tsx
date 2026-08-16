@@ -843,10 +843,10 @@ export function HistoryTable({
           >
             <div className="flex items-start justify-between gap-4 border-b border-[var(--panel-border)] px-6 py-5">
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-[#4f5ef7]">
                   {mode === "requests" ? "Request Details" : "Report Preview"}
                 </p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">{selectedTask.taskTitle}</h3>
+                <h3 className="mt-2 text-2xl font-semibold text-[var(--foreground)]">{selectedTask.taskTitle}</h3>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                   {selectedTask.department.name} - {toDateOnly(selectedTask.planDate)}
                 </p>
@@ -1049,8 +1049,8 @@ export function HistoryTable({
           >
             <div className="flex items-start justify-between gap-4 border-b border-[var(--panel-border)] px-6 py-5">
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">Pending Approval</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">{selectedRequest.dailyTask.taskTitle}</h3>
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-[#4f5ef7]">Pending Approval</p>
+                <h3 className="mt-2 text-2xl font-semibold text-[var(--foreground)]">{selectedRequest.dailyTask.taskTitle}</h3>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                   {selectedRequest.requestedBy.name} - {selectedRequest.requestedBy.department?.name ?? "No department"} - {toDateOnly(selectedRequest.dailyTask.planDate)}
                 </p>
