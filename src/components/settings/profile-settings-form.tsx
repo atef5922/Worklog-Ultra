@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, ImagePlus, MapPin, Phone, UserRound } from "lucide-react";
+import { Building2, MapPin, Phone, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -111,15 +111,15 @@ export function ProfileSettingsForm({
         </div>
         <div className="w-full max-w-sm">
           <Label>Upload Photo</Label>
-          <div className="relative">
-            <ImagePlus className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
-            <Input
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="pl-10 file:mr-3 file:rounded-md file:border-0 file:bg-[var(--ring)] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
-              onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </div>
+          {/* The native control already renders its own button, so the file
+              picker is styled through `file:` rather than overlaying an icon
+              that collides with it. */}
+          <Input
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="cursor-pointer p-1 text-[0.75rem] text-[var(--muted-foreground)] file:mr-2.5 file:inline-flex file:h-full file:cursor-pointer file:items-center file:rounded-md file:border-0 file:bg-[#4f5ef7] file:px-3 file:text-[0.75rem] file:font-semibold file:text-white hover:file:bg-[#4453eb]"
+            onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)}
+            type="file"
+          />
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
