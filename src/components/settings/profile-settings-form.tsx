@@ -97,16 +97,19 @@ export function ProfileSettingsForm({
   }
 
   return (
-    <form action={onSubmit} className="space-y-5">
-      <div className="flex flex-col gap-4 rounded-3xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-18 w-18">
+    /* The shared controls are sized for roomy forms (h-11 inputs, mb-2 labels).
+       Trimming them here keeps the whole page on one screen without touching
+       every other form in the app. */
+    <form action={onSubmit} className="flex h-full flex-col gap-3 [&_[role=combobox]]:h-10 [&_input]:h-10 [&_label]:mb-1 [&_label]:text-[0.76rem]">
+      <div className="flex shrink-0 flex-col gap-2.5 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2.5">
+          <Avatar className="h-12 w-12">
             {avatarPreview ? <AvatarImage alt={user.name} src={avatarPreview} /> : null}
             <AvatarFallback>{user.name.slice(0, 1)}</AvatarFallback>
           </Avatar>
-          <div>
-            <p className="font-semibold text-white">Profile Photo</p>
-            <p className="text-sm text-[var(--muted-foreground)]">Upload a direct image file instead of pasting a URL.</p>
+          <div className="min-w-0">
+            <p className="text-[0.85rem] font-semibold text-[var(--foreground)]">Profile Photo</p>
+            <p className="text-[0.72rem] leading-4 text-[var(--muted-foreground)]">Upload a direct image file instead of pasting a URL.</p>
           </div>
         </div>
         <div className="w-full max-w-sm">
@@ -122,7 +125,9 @@ export function ProfileSettingsForm({
           />
         </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Three across on a wide screen: six fields in two columns cost three
+          rows of height the page could not spare. */}
+      <div className="grid shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <div>
           <Label>Full Name</Label>
           <div className="relative">
@@ -157,7 +162,7 @@ export function ProfileSettingsForm({
           </div>
         </div>
       </div>
-      <div>
+      <div className="shrink-0">
         <Label>Department</Label>
         <Select value={departmentId} onValueChange={setDepartmentId}>
           <SelectTrigger>
@@ -176,14 +181,16 @@ export function ProfileSettingsForm({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center justify-between rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
-        <div>
-          <p className="font-semibold text-white">Enterprise profile controls</p>
-          <p className="text-sm text-[var(--muted-foreground)]">
+      {/* mt-auto pins this to the bottom of the panel, so the leftover height
+          sits above it as breathing room rather than below the whole card. */}
+      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-3">
+        <div className="min-w-0">
+          <p className="text-[0.85rem] font-semibold text-[var(--foreground)]">Enterprise profile controls</p>
+          <p className="text-[0.72rem] leading-4 text-[var(--muted-foreground)]">
             Keep your identity, image, and department information current for the entire workspace. Salary setup stays inside Team panel for Team Head and Admin only.
           </p>
         </div>
-        <Button disabled={loading} type="submit">
+        <Button className="h-9 shrink-0" disabled={loading} type="submit">
           {loading ? "Saving..." : "Save Changes"}
         </Button>
       </div>
