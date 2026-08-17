@@ -7,8 +7,33 @@ import { Button } from "@/components/ui/button";
 
 export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { currentUserId: string; initiallyWorking: boolean }) {
   const [status, setStatus] = useState<WorklogTrackerStatus | null>(null);
+  /*
+   * The desktop preload can attach `window.worklogDesktop` after React hydrates.
+   * With an empty subscribe this was read exactly once, so any reload that beat
+   * the bridge left this panel stuck on "open the desktop app" forever. Polling
+   * briefly and then notifying React fixes that without a render loop.
+   */
   const isDesktop = useSyncExternalStore(
-    () => () => {},
+    (onStoreChange) => {
+      if (window.worklogDesktop) {
+        return () => {};
+      }
+
+      let attempts = 0;
+      const intervalId = window.setInterval(() => {
+        if (window.worklogDesktop) {
+          window.clearInterval(intervalId);
+          onStoreChange();
+          return;
+        }
+
+        if (++attempts >= 24) {
+          window.clearInterval(intervalId);
+        }
+      }, 250);
+
+      return () => window.clearInterval(intervalId);
+    },
     () => Boolean(window.worklogDesktop),
     () => false,
   );
@@ -39,7 +64,9 @@ export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { cur
       window.removeEventListener("worklog:task-monitor-start", onStart);
       window.removeEventListener("worklog:task-monitor-stop", onStop);
     };
-  }, [currentUserId, initiallyWorking]);
+    // isDesktop is a dependency so this wires up the moment the bridge appears,
+    // not only when the component happened to mount after it.
+  }, [currentUserId, initiallyWorking, isDesktop]);
 
   async function exportScreenshots() {
     const result = await window.worklogDesktop?.exportTrackerScreenshots({ userId: currentUserId });
