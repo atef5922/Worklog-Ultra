@@ -83,15 +83,42 @@ html {
  *
  * The anchor is 1.054vw: at a 1518px viewport it resolves to exactly 16px — the
  * reference layout — and at 1366px it resolves to 14.4px, which reproduces that
- * same reference at 100% browser zoom. Clamped so small laptops stay readable
- * and ultra-wide monitors do not blow the UI up.
+ * same reference at 100% browser zoom.
+ *
+ * Why `min()` and not vw alone: browser zoom-out multiplies the viewport in CSS
+ * pixels on BOTH axes, so a vw-driven root tracks it exactly and the layout keeps
+ * its proportions at any zoom. The old 19.5px ceiling broke that — at 67% and 50%
+ * zoom the root stopped growing while the viewport kept going, so the page held
+ * far more rows than it was designed for and the surplus all dumped into the
+ * bottom card row, which ballooned into empty space. The ceiling is now high
+ * enough to stay out of the way, and the 2.3vh term takes over instead: it is the
+ * guard the ceiling was really there for, since only a viewport that is wide
+ * relative to its height (ultra-wides) can overflow vertically, and a term keyed
+ * to height is what actually catches that case. At ordinary desktop aspect ratios
+ * the vw term is the smaller one, so nothing about 100% zoom changes.
+ *
+ * The bounds are deliberately far out of the way, because both of them used to
+ * bind at ordinary zoom levels and binding is exactly what breaks the layout:
+ * zooming IN shrinks the viewport in CSS pixels, so the old 14px floor held the
+ * UI too large for the space it had left (125% needed 11.5px and got 14px, a
+ * fifth too big, which is why the page stopped fitting), while zooming OUT ran
+ * into the ceiling (25% needed 57.6px). Between 11px and 160px the term is free
+ * to track the viewport across Chrome's whole 25%–125% range, and the vh term
+ * still guards the one case a bound is genuinely needed for.
+ *
+ * The 900px threshold matches `min-[900px]`, the breakpoint where the dashboard
+ * switches to its single-screen layout. It used to start at 1024px, which left a
+ * band where that layout was active but the scale was not, so the root snapped
+ * back to 16px and the page needed far more height than it had — 150% zoom lands
+ * squarely in that band. Below 900px the stacked layout takes over and scrolls,
+ * so the fixed root is right again there.
  *
  * Media queries are unaffected: `rem` inside a media query always resolves
  * against the initial 16px, so every Tailwind breakpoint stays where it is.
  */
-@media (min-width: 1024px) {
+@media (min-width: 900px) {
   html {
-    font-size: clamp(14px, 1.054vw, 19.5px);
+    font-size: clamp(9px, min(1.054vw, 2.3vh), 160px);
   }
 }
 
@@ -164,6 +191,56 @@ input[type="reset"],
 [data-dashboard-card]:hover,
 [data-dashboard-panel]:hover {
   transform: translateY(-3px);
+}
+
+/*
+ * Time and date fields.
+ *
+ * The browser's own picker button renders as a very faint grey glyph, so at
+ * these field sizes the start/end time inputs read as plain text and nothing
+ * suggests they can be opened. Darkening it, giving it a hit area and a hover
+ * state makes the affordance obvious, and the pointer cursor confirms it on the
+ * way in. Disabled fields keep the default arrow — the timer disables these
+ * while it runs, and a clickable-looking control that does nothing is worse
+ * than a plain one.
+ */
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.62;
+  margin-left: 0.125rem;
+  padding: 0.1875rem;
+  border-radius: 0.375rem;
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease;
+}
+
+input[type="time"]:hover::-webkit-calendar-picker-indicator,
+input[type="date"]:hover::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]:hover::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background-color: rgba(79, 94, 247, 0.14);
+}
+
+input[type="time"]:disabled::-webkit-calendar-picker-indicator,
+input[type="date"]:disabled::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]:disabled::-webkit-calendar-picker-indicator {
+  cursor: default;
+  opacity: 0.28;
+  background-color: transparent;
+}
+
+/* The glyph is painted dark, so it has to be inverted to stay legible on the
+   dark theme's field background. */
+html[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+html[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+html[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.7);
 }
 
 .text-balance {

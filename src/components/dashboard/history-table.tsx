@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ClipboardList, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DashboardTaskTimerAction } from "@/components/dashboard/dashboard-task-timer-action";
@@ -402,6 +402,21 @@ function parseActionResponse(raw: string) {
   }
 }
 
+/** Records per page. The panel is sized to hold exactly this many. */
+const HISTORY_PAGE_SIZE = 4;
+
+/** The raw enum ("in_progress") was reaching the badge and rendering as
+ *  IN_PROGRESS with wide tracking, which read as a database value, not a label. */
+function formatStatusLabel(status?: string) {
+  if (!status) return "Planned";
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+const historyPagerClass =
+  "inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] px-2 text-[0.7rem] font-semibold text-[var(--foreground)] transition hover:border-[#4f5ef7]/40 hover:bg-[var(--panel-alt)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--panel-border)] disabled:hover:bg-[var(--panel)]";
+
 export function HistoryTable({
   history = [],
   role,
@@ -426,6 +441,7 @@ export function HistoryTable({
   const [selectedRequest, setSelectedRequest] = useState<PendingRequest | null>(null);
   const [liveNow, setLiveNow] = useState(() => new Date());
   const [isClient, setIsClient] = useState(false);
+  const [page, setPage] = useState(1);
 
   const visibleHistory = useMemo(() => {
     if (mode !== "history") {
@@ -448,6 +464,17 @@ export function HistoryTable({
       return isCompleted;
     });
   }, [history, mode, role]);
+
+  /*
+   * Paged rather than scrolled: the page is sized to one screen, so a long
+   * history moves onto the next page instead of growing a scrollbar.
+   */
+  const totalPages = Math.max(1, Math.ceil(visibleHistory.length / HISTORY_PAGE_SIZE));
+  // Clamped, so deleting rows or switching filters can never strand the view on
+  // a page that no longer exists.
+  const currentPage = Math.min(page, totalPages);
+  const firstIndex = (currentPage - 1) * HISTORY_PAGE_SIZE;
+  const pagedHistory = visibleHistory.slice(firstIndex, firstIndex + HISTORY_PAGE_SIZE);
 
   useEffect(() => {
     setIsClient(true);
@@ -644,24 +671,30 @@ export function HistoryTable({
     const reportDate = toDateOnly(task.planDate);
 
     return (
-      <div className="flex max-w-[240px] flex-wrap gap-1.5">
-        <Button className={compactActionButtonClass} onClick={() => setSelectedTask(task)} size="sm" variant="secondary">
+      /* Six columns so the five actions land on exactly two rows (3 + 2) at the
+         same positions in every record. Wrapping sized each button to its own
+         text, which is why nothing lined up before. Full width of its column, so
+         no empty band is left beside the buttons. */
+      <div className="grid w-full grid-cols-6 gap-1 [&_button]:w-full">
+        <Button className={`${compactActionButtonClass} col-span-2`} onClick={() => setSelectedTask(task)} size="sm" variant="secondary">
           Details
         </Button>
-        <Link href={`/dashboard/report?date=${reportDate}&taskId=${task.id}`}>
+        <Link className="col-span-2 w-full" href={`/dashboard/report?date=${reportDate}&taskId=${task.id}`}>
           <Button className={compactActionButtonClass} size="sm" variant="outline">
-            Open Editor
+            Editor
           </Button>
         </Link>
         <Button
-          className={compactActionButtonClass}
+          className={`${compactActionButtonClass} col-span-2`}
           disabled={loadingId === task.id}
           onClick={() => restoreTaskToDashboard(task, { autoStart: true })}
           size="sm"
+          title="Return To Dashboard"
           variant="outline"
         >
-          Return To Dashboard
+          Return
         </Button>
+        <div className="col-span-6 [&>*]:flex [&>*]:gap-1 [&_button]:flex-1">
         <TaskManageControls
           compact
           hideDoneAction
@@ -687,6 +720,7 @@ export function HistoryTable({
             ) : null
           }
         />
+        </div>
       </div>
     );
   }
@@ -697,19 +731,32 @@ export function HistoryTable({
   const themeStyles = getThemeStyles(theme);
 
   return (
-    <div className="space-y-5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       {!(mode === "requests" && role === "manager") ? (
-        <div className="history-table-shell overflow-x-auto rounded-[24px] border border-[var(--panel-border)] p-2" style={themeStyles.shell}>
-          <Table className="border-separate border-spacing-y-3">
+        /* Both axes declared: `overflow-x-auto` alone makes the browser compute
+           overflow-y to auto too, which is where the vertical scrollbar down the
+           right of the table came from. Paging handles length now. */
+        <div className="history-table-shell min-h-0 flex-1 overflow-x-auto overflow-y-hidden rounded-[20px] border border-[var(--panel-border)] p-1.5" style={themeStyles.shell}>
+          {/* table-fixed is what makes the column widths below binding. Without
+              it the browser sizes columns to their content, so one long task
+              title widened the whole table, pushed Action off the edge and left
+              a horizontal scrollbar — and `truncate` never fired, because the
+              cell simply grew to fit the text. */}
+          <Table className="table-fixed border-separate border-spacing-y-1.5">
             <THead>
+              {/* TH defaults to px-4 py-3; this header only labels three columns
+                  and does not need that much of the panel's height. */}
+              {/* Date and Action are pinned to what their content actually needs,
+                  so Task Details absorbs the rest instead of Action keeping a
+                  band of empty space to the right of its buttons. */}
               <TR>
-                <TH>Date</TH>
-                <TH>Task Details</TH>
-                <TH>Action</TH>
+                <TH className="w-[8.5rem] px-3 py-1.5">Date</TH>
+                <TH className="px-3 py-1.5">Task Details</TH>
+                <TH className="w-[17rem] px-3 py-1.5">Action</TH>
               </TR>
             </THead>
             <TBody>
-              {(visibleHistory ?? []).map((task) => {
+              {(pagedHistory ?? []).map((task) => {
                 const latestStatus = task.updates[0]?.status;
                 const recency = getRecencyMeta(task);
                 const rowStyle = getRowStyle(theme, recency.tone ?? "default");
@@ -735,69 +782,81 @@ export function HistoryTable({
                     className="align-top border-0"
                   >
                     <TD
-                      className={`${recency.row} cursor-pointer rounded-l-[22px] border border-r-0 px-4 py-3 text-[var(--foreground)]`}
+                      className={`${recency.row} w-[8.5rem] cursor-pointer border border-r-0 px-3 py-2 text-[var(--foreground)]`}
                       onClick={() => setSelectedTask(task)}
                       style={rowStyle}
                     >
-                      <div className="space-y-2">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted-foreground)]">
-                            {dateParts.weekday}
-                          </p>
-                          <div className="mt-1.5 flex items-end gap-1.5">
-                            <span className="font-mono text-[1.75rem] font-black leading-none tabular-nums text-[var(--foreground)]">
-                              {dateParts.day}
-                            </span>
-                            <span className="pb-0.5 text-[0.78rem] font-semibold text-[var(--muted-foreground)]">{dateParts.monthYear}</span>
-                          </div>
+                      {/* Day, month and weekday on two tight lines instead of a
+                          28px numeral stacked over its own rows. */}
+                      <div className="flex flex-col gap-1">
+                        {/* nowrap: "16 Aug 2026" was breaking after the month in
+                            the narrower rows, so the column looked ragged. */}
+                        <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+                          <span className="font-mono text-[1.05rem] font-black leading-none tabular-nums text-[var(--foreground)]">
+                            {dateParts.day}
+                          </span>
+                          <span className="text-[0.72rem] font-semibold text-[var(--muted-foreground)]">{dateParts.monthYear}</span>
                         </div>
-                        {recency.label ? <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] ${recency.chip}`}>{recency.label}</span> : null}
+                        {/* Weekday and the TODAY chip on one line: three stacked
+                            lines in a narrow cell read as clutter. */}
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-[0.55rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
+                            {dateParts.weekday}
+                          </span>
+                          {recency.label ? (
+                            <span className={`inline-flex rounded-full px-1.5 py-px text-[0.55rem] font-bold uppercase tracking-[0.1em] ${recency.chip}`}>
+                              {recency.label}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </TD>
                     <TD
-                      className={`${recency.row} cursor-pointer border-y px-4 py-3 text-[var(--foreground)]`}
+                      className={`${recency.row} cursor-pointer border-y px-3 py-2 text-[var(--foreground)]`}
                       onClick={() => setSelectedTask(task)}
                       style={rowStyle}
                     >
-                      <div className="flex flex-col gap-2.5 xl:flex-row xl:items-start xl:justify-between">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <div className="text-lg font-bold leading-snug text-[var(--foreground)]">{task.taskTitle}</div>
-                          <p className="text-sm font-medium text-[var(--muted-foreground)]">
-                            Created for {dateParts.compact}
-                          </p>
+                      <div className="flex flex-col gap-1.5 xl:flex-row xl:items-start xl:justify-between xl:gap-3">
+                        <div className="min-w-0 flex-1">
+                          {/* "Created for <date>" dropped: the date column beside
+                              this already carries it, on every single row. */}
+                          <p className="truncate text-[0.88rem] font-bold leading-tight text-[var(--foreground)]">{task.taskTitle}</p>
                           {visibleNote ? (
-                            <p className="line-clamp-1 text-sm leading-6 text-[var(--muted-foreground)]">
+                            <p className="mt-0.5 line-clamp-1 text-[0.72rem] leading-4 text-[var(--muted-foreground)]">
                               {visibleNote}
                             </p>
                           ) : null}
                         </div>
-                        <div className="grid gap-1.5 xl:min-w-[13rem]">
-                          <div className="flex items-center justify-between gap-4 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)]/70 px-2.5 py-1.5">
-                            <span className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Start</span>
-                            <div className="text-right">
-                              <p className={`font-mono text-[0.82rem] font-bold tabular-nums ${startedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
-                                {formatTimeLabel(startedParts)}
-                              </p>
-                              <p className="text-[0.65rem] text-[var(--muted-foreground)]">{startedParts.date}</p>
-                            </div>
+                        {/* Start and end side by side, times only — the day is in
+                            the date column, so repeating it here cost two lines. */}
+                        {/* Label above value and a fixed width: side by side the
+                            time wrapped onto a second line in one box but not the
+                            other, so the two never lined up. */}
+                        <div className="flex shrink-0 items-stretch gap-1.5 xl:w-[12.5rem]">
+                          <div className="flex-1 rounded-lg border border-[var(--panel-border)] bg-[var(--panel)]/70 px-2 py-1 text-center">
+                            <p className="text-[0.5rem] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Start</p>
+                            <p className={`mt-0.5 whitespace-nowrap font-mono text-[0.72rem] font-bold leading-none tabular-nums ${startedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
+                              {formatTimeLabel(startedParts)}
+                            </p>
                           </div>
-                          <div className="flex items-center justify-between gap-4 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)]/70 px-2.5 py-1.5">
-                            <span className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">End</span>
-                            <div className="text-right">
-                              <p className={`font-mono text-[0.82rem] font-bold tabular-nums ${endedParts.isLive ? "text-emerald-600" : endedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
-                                {formatTimeLabel(endedParts)}
-                              </p>
-                              <p className={`text-[0.65rem] ${endedParts.isLive ? "text-emerald-600" : "text-[var(--muted-foreground)]"}`}>{endedParts.date}</p>
-                            </div>
+                          <div className="flex-1 rounded-lg border border-[var(--panel-border)] bg-[var(--panel)]/70 px-2 py-1 text-center">
+                            <p className="text-[0.5rem] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">End</p>
+                            <p className={`mt-0.5 whitespace-nowrap font-mono text-[0.72rem] font-bold leading-none tabular-nums ${endedParts.isLive ? "text-emerald-600" : endedParts.isSet ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>
+                              {formatTimeLabel(endedParts)}
+                            </p>
                           </div>
                         </div>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border px-2.5 py-1 text-xs font-semibold text-[var(--foreground)]" style={themeStyles.departmentChip}>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                        <span className="rounded-full border px-2 py-0.5 text-[0.62rem] font-semibold text-[var(--foreground)]" style={themeStyles.departmentChip}>
                           {task.department.name}
                         </span>
-                        <Badge variant={statusVariant(latestStatus)}>{latestStatus ?? "planned"}</Badge>
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getTrackedTone(task.updates[0]?.trackedMinutes ?? 0)}`}>
+                        {/* Badge ships with tracking-[0.24em], which stretched
+                            "In Progress" wider than the task title beside it. */}
+                        <Badge className="px-2 py-0.5 text-[0.6rem] tracking-[0.06em]" variant={statusVariant(latestStatus)}>
+                          {formatStatusLabel(latestStatus)}
+                        </Badge>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[0.62rem] font-semibold ${getTrackedTone(task.updates[0]?.trackedMinutes ?? 0)}`}>
                           {formatTrackedMinutes(task.updates[0]?.trackedMinutes ?? 0)}
                         </span>
                         {continuationOverview ? (
@@ -822,7 +881,12 @@ export function HistoryTable({
                         ) : null}
                       </div>
                     </TD>
-                    <TD className={`${recency.row} min-w-[180px] rounded-r-[22px] border border-l-0 px-4 py-3 text-[var(--foreground)] align-top`} style={rowStyle}>
+                    {/* Buttons shrunk here rather than in renderAction, which is
+                        shared with the request-review mode. */}
+                    <TD
+                      className={`${recency.row} w-[17rem] border border-l-0 px-2 py-2 align-top text-[var(--foreground)] [&_button]:h-7 [&_button]:px-2 [&_button]:text-[0.68rem] [&_svg]:h-3 [&_svg]:w-3`}
+                      style={rowStyle}
+                    >
                       {renderAction(task)}
                     </TD>
                   </TR>
@@ -830,7 +894,7 @@ export function HistoryTable({
               })}
               {(visibleHistory ?? []).length ? null : (
                 <TR className="border-0">
-                  <TD className="rounded-[1.375rem] border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-10" colSpan={3}>
+                  <TD className="border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-6" colSpan={3}>
                     <div className="flex flex-col items-center justify-center gap-1.5 text-center">
                       <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-violet-500/10 text-violet-500">
                         <ClipboardList className="h-4 w-4" />
@@ -845,6 +909,37 @@ export function HistoryTable({
               )}
             </TBody>
           </Table>
+        </div>
+      ) : null}
+
+      {!(mode === "requests" && role === "manager") && totalPages > 1 ? (
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <p className="font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+            {firstIndex + 1}-{firstIndex + pagedHistory.length} of {visibleHistory.length}
+          </p>
+          <div className="flex items-center gap-1.5">
+            <button
+              className={historyPagerClass}
+              disabled={currentPage <= 1}
+              onClick={() => setPage(currentPage - 1)}
+              type="button"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Prev
+            </button>
+            <span className="px-1 font-mono text-[0.68rem] font-semibold tabular-nums text-[var(--muted-foreground)]">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              className={historyPagerClass}
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage(currentPage + 1)}
+              type="button"
+            >
+              Next
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       ) : null}
 

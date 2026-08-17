@@ -224,7 +224,7 @@ export function DashboardRecurringQuickAdd({
 
   return (
     <div
-      className="dashboard-accent accent-teal flex h-full min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
+      className="dashboard-accent accent-teal flex h-full min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
       data-dashboard-panel
     >
       <PanelHeader

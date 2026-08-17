@@ -103,7 +103,7 @@ export function DashboardTimeSummary({
 
   return (
     <div
-      className="dashboard-accent accent-sky shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
+      className="dashboard-accent accent-sky shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
       data-dashboard-panel
     >
       <PanelHeader icon={Timer} title="Time Summary" tone="bg-sky-500/10 text-sky-500" />

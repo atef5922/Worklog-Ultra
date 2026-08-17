@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { formatMinutes, toDateOnly, toDateTimeInputValue } from "@/lib/utils";
+import { cn, formatMinutes, toDateOnly, toDateTimeInputValue } from "@/lib/utils";
 
 function attendanceStatusTone(status?: string | null) {
   if (status === "present" || status === "remote") return "bg-emerald-500/10 text-emerald-600";
@@ -248,21 +248,33 @@ export function AttendancePanel({
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:gap-4">
+    /* One screen: the page never scrolls and the title stays fixed; the panels
+       below scroll inside their own area, which is what keeps a long team list
+       from pushing the layout past the viewport. */
+    <div
+      className="flex flex-col gap-2 min-[900px]:min-h-0 min-[900px]:flex-1 min-[900px]:overflow-hidden"
+      data-fit-viewport
+    >
       <PageHeader
         icon={CalendarCheck2}
         subtitle="Log today's check in, check out, and break time."
         title="Attendance"
       />
 
+      {/* An employee never sees the team roster, so without this the page had no
+          flexible panel at all and anything past the fold was simply clipped.
+          For a manager the roster below is the flexible one, so this stays put. */}
       <div
-        className="dashboard-accent accent-emerald rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        className={cn(
+          "dashboard-accent accent-emerald flex min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]",
+          userRole === "employee" ? "min-[900px]:flex-1" : "shrink-0",
+        )}
         data-dashboard-panel
       >
         <PanelHeader icon={CalendarCheck2} title="Today's Attendance" tone="bg-emerald-500/10 text-emerald-500" />
-        <div className="mt-2.5 space-y-3">
-          <div className="grid gap-3 xl:grid-cols-[1fr_auto]">
-            <div className="grid gap-4 md:grid-cols-2">
+        <div className="dashboard-scroll-area mt-2 min-h-0 flex-1 space-y-2 pr-0.5">
+          <div className="grid gap-2 xl:grid-cols-[1fr_auto]">
+            <div className="grid gap-2.5 md:grid-cols-2">
               <div>
                 <Label>Status</Label>
                 <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
@@ -376,9 +388,12 @@ export function AttendancePanel({
         </div>
       </div>
 
+      {/* The only unbounded thing on this page is the roster, so it is the one
+          part that takes the leftover height and scrolls inside its own card
+          rather than letting the page grow. */}
       {userRole !== "employee" ? (
         <div
-          className="dashboard-accent accent-sky rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          className="dashboard-accent accent-sky flex min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)] min-[900px]:flex-1"
           data-dashboard-panel
         >
           <PanelHeader
@@ -391,7 +406,7 @@ export function AttendancePanel({
             title="Team Attendance Today"
             tone="bg-sky-500/10 text-sky-500"
           />
-          <div className="mt-2.5 grid gap-2 xl:grid-cols-2">
+          <div className="dashboard-scroll-area mt-2 grid min-h-0 flex-1 content-start gap-2 pr-0.5 xl:grid-cols-2">
             {(items ?? []).map((item) => {
               const checkInDisplay = formatAttendanceDisplayParts(item.attendance?.checkInAt);
               const checkOutDisplay = formatAttendanceDisplayParts(item.attendance?.checkOutAt);
@@ -461,11 +476,11 @@ export function AttendancePanel({
       ) : null}
 
       <div
-        className="dashboard-accent accent-violet rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        className="dashboard-accent accent-violet shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
         data-dashboard-panel
       >
         <PanelHeader icon={MailCheck} title="Reminder Automation" tone="bg-violet-500/10 text-violet-500" />
-        <div className="mt-2.5 space-y-3 text-[0.8rem] leading-6 text-[var(--muted-foreground)]">
+        <div className="mt-2 space-y-2 text-[0.78rem] leading-5 text-[var(--muted-foreground)]">
           This tool sends attendance and work follow-up emails. Run it manually here, or wire it to your scheduler in the background.
           {userRole !== "employee" ? (
             <div>

@@ -59,6 +59,8 @@ export type DashboardWorkPlanTask = {
 type DashboardWorkPlanSectionProps = {
   tasks: DashboardWorkPlanTask[];
   canEdit: boolean;
+  /** Checked in right now; a closed workday blocks starting or resuming a task. */
+  attendanceRunning: boolean;
   currentUserId: string;
   formattedDate: string;
   onStatsChange?: (stats: {
@@ -176,6 +178,7 @@ function parseResponse(raw: string) {
 type TaskTimerActionWrapperProps = {
   task: DashboardWorkPlanTask;
   canEdit: boolean;
+  attendanceRunning: boolean;
   onDoneClick: (taskId: string) => void;
   onSnapshotChange: (taskId: string, snapshot: TaskTimerSnapshot) => void;
   afterDoneSlot?: ReactNode;
@@ -184,6 +187,7 @@ type TaskTimerActionWrapperProps = {
 const TaskTimerActionWrapper = ({
   task,
   canEdit,
+  attendanceRunning,
   onDoneClick,
   onSnapshotChange,
   afterDoneSlot,
@@ -205,6 +209,7 @@ const TaskTimerActionWrapper = ({
     <DashboardTaskTimerAction
       canEdit={canEdit}
       compact
+      initialAttendanceRunning={attendanceRunning}
       initialActualEnd={task.updates[0]?.actualEnd ?? null}
       initialActualStart={task.updates[0]?.actualStart ?? null}
       initialStatus={status}
@@ -253,6 +258,7 @@ function emitDashboardStats(
 export function DashboardWorkPlanSection({
   tasks: initialTasks,
   canEdit,
+  attendanceRunning,
   currentUserId,
   formattedDate,
   onStatsChange,
@@ -570,7 +576,7 @@ export function DashboardWorkPlanSection({
       <div
         // Height is pinned to exactly one task card so a half-cut card never
         // shows; the rest scroll, snapping to each card's top edge.
-        className="dashboard-accent accent-indigo flex min-h-0 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] shadow-[var(--shadow)] min-[900px]:h-[16.35rem]"
+        className="dashboard-accent accent-indigo flex min-h-0 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] min-[900px]:h-[16.35rem]"
         data-dashboard-panel
       >
         <div className="shrink-0 border-b border-[var(--panel-border)] px-2.5 py-1.5">
@@ -618,8 +624,10 @@ export function DashboardWorkPlanSection({
                             </span>
                           ) : null}
                         </div>
-                        <p className="text-[0.6875rem] text-[var(--muted-foreground)] sm:text-xs">{task.departmentName}</p>
-
+                        {/* Department rides in the chip row rather than sitting on
+                            a line of its own: it is the same kind of fact as
+                            priority and status, and giving it its own row cost a
+                            line of height on every card. */}
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span
                             className={`inline-flex min-w-[4.5rem] items-center justify-center rounded-full px-2 py-1 text-[0.5625rem] font-bold uppercase tracking-[0.12em] ${getPriorityTone(task.priority)}`}
@@ -629,6 +637,12 @@ export function DashboardWorkPlanSection({
                           <span className={`inline-flex rounded-full px-2 py-1 text-[0.625rem] font-semibold ${statusMeta.chip}`}>
                             {statusMeta.label}
                           </span>
+                          <span
+                            className="inline-flex max-w-[11rem] items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[0.625rem] font-semibold text-slate-700"
+                            title={task.departmentName}
+                          >
+                            <span className="truncate">{task.departmentName}</span>
+                          </span>
                         </div>
                       </div>
 
@@ -636,6 +650,7 @@ export function DashboardWorkPlanSection({
                         <TaskTimerActionWrapper
                           task={task}
                           canEdit={canEdit}
+                          attendanceRunning={attendanceRunning}
                           afterDoneSlot={
                             <TaskManageControls
                               compact

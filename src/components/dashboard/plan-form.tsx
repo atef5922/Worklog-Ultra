@@ -99,6 +99,7 @@ export function PlanForm({
   assignableUsers = [],
   currentUserId,
   clearDraftOnMount = false,
+  fitViewport = false,
   onSaved,
 }: {
   departments: Department[];
@@ -110,6 +111,12 @@ export function PlanForm({
   assignableUsers: AssignableUser[];
   currentUserId: string;
   clearDraftOnMount?: boolean;
+  /**
+   * Fill the parent's leftover height and keep only the task list scrollable.
+   * Off in the Add Task modal, where the form must flow at its natural height
+   * inside the modal's own scroller.
+   */
+  fitViewport?: boolean;
   onSaved?: () => void;
 }) {
   const router = useRouter();
@@ -341,9 +348,15 @@ export function PlanForm({
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:gap-4">
+    <div className={cn("flex flex-col gap-2", fitViewport && "min-[900px]:min-h-0 min-[900px]:flex-1")}>
       <div
-        className="dashboard-accent accent-teal rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        className={cn(
+          "dashboard-accent accent-teal rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]",
+          // Capped, not shrink-0: expanded it holds six cards and was taking the
+          // whole page, which squeezed the task list into a strip that scrolled
+          // at a single task. Collapsed the cap never binds.
+          fitViewport && "flex min-h-0 shrink-0 flex-col min-[900px]:max-h-[14rem]",
+        )}
         data-dashboard-panel
       >
         <PanelHeader
@@ -362,11 +375,11 @@ export function PlanForm({
           title={`Suggestions for ${activeDepartmentName}`}
           tone="bg-teal-500/10 text-teal-500"
         />
-        <p className="mt-1.5 text-[0.78rem] leading-5 text-[var(--muted-foreground)]">
+        <p className="mt-1 shrink-0 text-[0.75rem] leading-4 text-[var(--muted-foreground)]">
           Smart ideas for your department. Open it whenever you want a quick starting point.
         </p>
         {showSuggestions ? (
-          <div className="mt-2.5">
+          <div className={cn("mt-2", fitViewport && "dashboard-scroll-area min-h-0 flex-1 pr-0.5")}>
             <div className="grid gap-2 xl:grid-cols-2">
               {suggestions.length ? (
                 (suggestions ?? []).map((suggestion) => (
@@ -422,7 +435,10 @@ export function PlanForm({
       </div>
 
       <div
-        className="dashboard-accent accent-indigo rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        className={cn(
+          "dashboard-accent accent-indigo rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]",
+          fitViewport && "flex min-h-0 flex-col min-[900px]:flex-1",
+        )}
         data-dashboard-panel
       >
         <PanelHeader
@@ -439,16 +455,23 @@ export function PlanForm({
           icon={ListChecks}
           title="Today's Task List"
         />
-        <p className="mt-1.5 text-[0.78rem] leading-5 text-[var(--muted-foreground)]">
+        <p className="mt-1 shrink-0 text-[0.75rem] leading-4 text-[var(--muted-foreground)]">
           Add today&apos;s tasks here first. After saving, start the timer from the dashboard.
         </p>
-        <div className="mt-2.5 space-y-2.5">
+        <div
+          className={cn(
+            "mt-2 space-y-2",
+            // The task list is the one part that grows without bound, so it is
+            // the only thing allowed to scroll.
+            fitViewport && "dashboard-scroll-area min-h-0 flex-1 pr-0.5",
+          )}
+        >
           {(tasks ?? []).map((task, index) => (
             <div
               key={task.clientId}
-              className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-3 transition-colors hover:border-[#4f5ef7]/30"
+              className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-2.5 transition-colors hover:border-[#4f5ef7]/30"
             >
-              <div className="mb-2.5 flex items-center justify-between gap-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[#4f5ef7]/10 font-mono text-[0.625rem] font-bold tabular-nums text-[#4f5ef7]">
                     {String(index + 1).padStart(2, "0")}
@@ -471,7 +494,10 @@ export function PlanForm({
                 ) : null}
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              {/* Three across on a wide screen: title, department and priority
+                  used to wrap onto two rows and cost every task card a row of
+                  height it did not need. */}
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 <div>
                   <Label>Task Title</Label>
                   <Input
@@ -513,7 +539,7 @@ export function PlanForm({
                 </div>
               </div>
 
-              <div className="mt-3">
+              <div className="mt-2">
                 <Label>Description</Label>
                 <Textarea
                   onChange={(event) =>
@@ -524,21 +550,27 @@ export function PlanForm({
                     )
                   }
                   placeholder="Add a short task description"
+                  rows={2}
                   value={stripAutoDescriptionText(task.taskDescription)}
                 />
               </div>
             </div>
           ))}
-
-          <Button
-            className="button-force-white h-11 w-full rounded-xl bg-[linear-gradient(135deg,#4f5ef7_0%,#6d5df6_55%,#8b5cf6_100%)] text-sm shadow-[0_14px_30px_rgba(79,94,247,0.28)] transition hover:brightness-[1.06] disabled:brightness-100"
-            disabled={loading}
-            onClick={save}
-            type="button"
-          >
-            {loading ? "Saving tasks..." : `Save Today's Tasks (${tasks.length})`}
-          </Button>
         </div>
+
+        {/* Outside the scroller: Save must stay reachable no matter how many
+            tasks have been added. */}
+        <Button
+          className={cn(
+            "button-force-white mt-2 h-10 w-full rounded-xl bg-[linear-gradient(135deg,#4f5ef7_0%,#6d5df6_55%,#8b5cf6_100%)] text-sm shadow-[0_14px_30px_rgba(79,94,247,0.28)] transition hover:brightness-[1.06] disabled:brightness-100",
+            fitViewport && "shrink-0",
+          )}
+          disabled={loading}
+          onClick={save}
+          type="button"
+        >
+          {loading ? "Saving tasks..." : `Save Today's Tasks (${tasks.length})`}
+        </Button>
       </div>
     </div>
   );

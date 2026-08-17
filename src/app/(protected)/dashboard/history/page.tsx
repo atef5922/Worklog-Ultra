@@ -20,15 +20,16 @@ export default async function HistoryPage({
   ]);
 
   return (
-    <div className="flex flex-col gap-3 sm:gap-4">
-      <PageHeader
-        icon={BriefcaseBusiness}
-        subtitle="Everything you have logged, newest first."
-        title="History"
-      />
+    /* One screen: the panel takes the leftover height and the table pages
+       through its records instead of scrolling. */
+    <div
+      className="flex flex-col gap-2 min-[900px]:min-h-0 min-[900px]:flex-1 min-[900px]:overflow-hidden"
+      data-fit-viewport
+    >
+      <PageHeader icon={BriefcaseBusiness} title="History" />
 
       <section
-        className="dashboard-accent accent-violet rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        className="dashboard-accent accent-violet flex min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)] min-[900px]:flex-1"
         data-dashboard-panel
         data-page-section
       >
@@ -42,7 +43,7 @@ export default async function HistoryPage({
           title="Work History"
           tone="bg-violet-500/10 text-violet-500"
         />
-        <div className="mt-2.5">
+        <div className="mt-2 flex min-h-0 flex-1 flex-col">
           <HistoryTable
             history={history ?? []}
             pendingApprovals={pendingApprovals ?? []}

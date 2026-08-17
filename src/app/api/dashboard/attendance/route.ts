@@ -7,6 +7,26 @@ import { db } from "@/lib/db";
 import { attendanceUpdateSchema } from "@/lib/validators/worklog";
 import { calculateMinutesBetween, getDhakaCutoffIso, toDateOnly } from "@/lib/utils";
 
+/**
+ * An empty string is the client saying "clear this field"; an absent field means
+ * "leave what is stored alone". Treating both as absent is what let a stale check
+ * out survive: starting a new session sends checkOutAt: "", and the old value was
+ * read back off the existing record, so the day stayed marked as completed with
+ * yesterday's out time while the timer was visibly running.
+ */
+function resolveTimestamp(value: string | undefined, existing: Date | null) {
+  if (value === undefined) {
+    return existing;
+  }
+
+  if (value === "") {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? existing : parsed;
+}
+
 export async function POST(request: NextRequest) {
   const user = await requireUser();
   const attendanceModel = (db as unknown as {
@@ -41,8 +61,6 @@ export async function POST(request: NextRequest) {
     return apiError("Employees can only update today's attendance.");
   }
 
-  const checkInAt = parsed.data.checkInAt ? new Date(parsed.data.checkInAt) : null;
-  const checkOutAt = parsed.data.checkOutAt ? new Date(parsed.data.checkOutAt) : null;
   const existingRecord = attendanceModel.findUnique
     ? await attendanceModel.findUnique({
         where: {
@@ -54,8 +72,8 @@ export async function POST(request: NextRequest) {
       })
     : null;
 
-  const finalCheckInAt = checkInAt ?? existingRecord?.checkInAt ?? null;
-  const finalActualCheckOutAt = checkOutAt ?? existingRecord?.checkOutAt ?? null;
+  const finalCheckInAt = resolveTimestamp(parsed.data.checkInAt, existingRecord?.checkInAt ?? null);
+  const finalActualCheckOutAt = resolveTimestamp(parsed.data.checkOutAt, existingRecord?.checkOutAt ?? null);
 
   if (finalCheckInAt && finalActualCheckOutAt && finalActualCheckOutAt.getTime() < finalCheckInAt.getTime()) {
     return apiError("Check Out time cannot be earlier than Check In time.");

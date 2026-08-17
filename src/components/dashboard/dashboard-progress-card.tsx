@@ -75,7 +75,7 @@ export function DashboardProgressCard({
      * `[data-dashboard-panel]` covers it now, and so does the CSS hover lift.
      */
     <div
-      className="dashboard-accent accent-violet shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
+      className="dashboard-accent accent-violet shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
       data-dashboard-panel
     >
       <PanelHeader icon={PieChart} title="Today's Progress" tone="bg-violet-500/10 text-violet-500" />

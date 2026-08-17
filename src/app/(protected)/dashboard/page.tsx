@@ -23,7 +23,6 @@ const statCardStyles = [
     iconWrap: "bg-[#eef2ff] text-[#3148d8]",
     card: "bg-white",
     border: "border-[#d8e2ff]",
-    shadow: "shadow-[0_22px_42px_rgba(79,94,247,0.14)]",
     accent: "bg-[#4f5ef7]",
     label: "Planned flow",
     art: "/vectors/Planned%20Tasks.png",
@@ -33,7 +32,6 @@ const statCardStyles = [
     iconWrap: "bg-[#e8fbf4] text-[#0f8f68]",
     card: "bg-white",
     border: "border-[#d5f7e9]",
-    shadow: "shadow-[0_22px_42px_rgba(16,185,129,0.14)]",
     accent: "bg-[#17b26a]",
     label: "Completed",
     art: "/vectors/Completed%20Tasks.png",
@@ -43,7 +41,6 @@ const statCardStyles = [
     iconWrap: "bg-[#fff5e6] text-[#dc7f07]",
     card: "bg-white",
     border: "border-[#ffe0ab]",
-    shadow: "shadow-[0_22px_42px_rgba(245,158,11,0.14)]",
     accent: "bg-[#f59e0b]",
     label: "Running now",
     art: "/vectors/In%20Progress%20Tasks.png",
@@ -53,7 +50,6 @@ const statCardStyles = [
     iconWrap: "bg-[#fff0f4] text-[#d91c4a]",
     card: "bg-white",
     border: "border-[#ffd0da]",
-    shadow: "shadow-[0_22px_42px_rgba(244,63,94,0.14)]",
     accent: "bg-[#f43f5e]",
     label: "Need action",
     art: "/vectors/Pending%20Tasks.png",
@@ -63,7 +59,6 @@ const statCardStyles = [
     iconWrap: "bg-[#f3eeff] text-[#7041e6]",
     card: "bg-white",
     border: "border-[#e1d6ff]",
-    shadow: "shadow-[0_22px_42px_rgba(139,92,246,0.14)]",
     accent: "bg-[#8b5cf6]",
     label: "Work time",
     art: "/vectors/Actual%20Work%20Time.png",
@@ -330,7 +325,10 @@ export default async function DashboardPage() {
 
           return (
             <Link
-              className={`group relative flex min-w-0 items-center gap-2 overflow-hidden rounded-[0.875rem] border p-2 transition hover:-translate-y-0.5 sm:rounded-[1rem] sm:p-2.5 ${style.card} ${style.border} ${style.shadow}`}
+              /* No drop shadow: the coloured 42px glow under each card read as a
+                 smudge on the background. The tinted border and the accent bar
+                 carry the separation on their own. */
+              className={`group relative flex min-w-0 items-center gap-2 overflow-hidden rounded-[0.875rem] border p-2 transition hover:-translate-y-0.5 sm:rounded-[1rem] sm:p-2.5 ${style.card} ${style.border}`}
               data-dashboard-card
               href={item.href}
               key={item.title}
@@ -348,7 +346,7 @@ export default async function DashboardPage() {
                   src={style.art}
                 />
               </div>
-              <div className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] shadow-sm ${style.iconWrap}`}>
+              <div className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] ${style.iconWrap}`}>
                 <Icon className="h-4 w-4" />
               </div>
               <div className="relative min-w-0 flex-1 pr-[22%]">
@@ -375,6 +373,7 @@ export default async function DashboardPage() {
             inside itself, so the page never grows past one screen. */}
         <div className="flex min-h-0 min-w-0 flex-col gap-2">
           <DashboardWorkPlanSection
+            attendanceRunning={Boolean(attendance?.checkInAt && !attendance?.checkOutAt)}
             canEdit={editAccess.allowed}
             currentUserId={user.id}
             formattedDate={formatDashboardDate(today)}
@@ -425,7 +424,7 @@ export default async function DashboardPage() {
             />
 
             <div
-              className="dashboard-accent accent-rose flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
+              className="dashboard-accent accent-rose flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
               data-dashboard-panel
             >
               <PanelHeader icon={CircleAlert} title="High Priority" tone="bg-rose-500/10 text-rose-500" />
@@ -433,7 +432,11 @@ export default async function DashboardPage() {
                 {urgentTasks.length ? (
                   urgentTasks.map((task) => (
                     <div
-                      className="flex items-center gap-2 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2 py-1 transition hover:border-rose-500/40 hover:bg-rose-500/5"
+                      /* Rows share the list's height instead of stacking at the
+                         top, so a taller screen fills the panel rather than
+                         leaving a dead band under the last row. min-h keeps them
+                         from squashing once there are enough rows to scroll. */
+                      className="flex min-h-[1.75rem] flex-1 items-center gap-2 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2 transition hover:border-rose-500/40 hover:bg-rose-500/5"
                       key={task.id}
                       title={`${task.taskTitle} · ${task.user.department?.name ?? "General"}`}
                     >
@@ -456,7 +459,7 @@ export default async function DashboardPage() {
             </div>
 
             <div
-              className="dashboard-accent accent-amber flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
+              className="dashboard-accent accent-amber flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
               data-dashboard-panel
             >
               <PanelHeader
@@ -469,10 +472,12 @@ export default async function DashboardPage() {
                 title="Notices"
                 tone="bg-amber-500/10 text-amber-500"
               />
-              <div className="dashboard-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-0.5 pr-0.5">
+              {/* Same gap as High Priority: these two panels sit side by side, so
+                  a different row rhythm reads as a misalignment between them. */}
+              <div className="dashboard-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-1.5 pr-0.5">
                 {notices.map((notice, index) => (
                   <div
-                    className="flex items-center gap-2 rounded-lg px-1.5 py-1 transition hover:bg-[var(--panel-muted)]"
+                    className="flex min-h-[1.75rem] flex-1 items-center gap-2 rounded-lg px-1.5 transition hover:bg-[var(--panel-muted)]"
                     key={notice}
                     title={notice}
                   >
@@ -492,7 +497,13 @@ export default async function DashboardPage() {
             as a safety net, and that net was the tall scrollbar down the right
             edge — an element only ever paints a scrollbar when it is itself
             `auto`/`scroll`, so the fix is to stop being one. */}
-        <div className="flex min-h-0 min-w-0 flex-col gap-2 min-[900px]:overflow-hidden">
+        {/* justify-between so the column ends flush with the left one. These three
+            are fixed-height, so on a screen taller than the reference the surplus
+            used to pile up under Attendance and leave it hanging short of the
+            cards beside it; spreading the gaps puts that surplus between the
+            panels instead. On a tight screen there is no surplus and this is a
+            no-op, so the reference layout is unchanged. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 min-[900px]:justify-between min-[900px]:overflow-hidden">
           <DashboardProgressCard
             completedTasks={completedTasks}
             inProgressTasks={inProgressTasks}
@@ -509,7 +520,7 @@ export default async function DashboardPage() {
           />
 
           <div
-            className="dashboard-accent accent-emerald flex shrink-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
+            className="dashboard-accent accent-emerald flex shrink-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
             data-dashboard-panel
           >
             <PanelHeader icon={CalendarCheck2} title="Attendance" tone="bg-emerald-500/10 text-emerald-500" />

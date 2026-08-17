@@ -1,12 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Play, Timer } from "lucide-react";
+import { Pause, Play, Timer } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ATTENDANCE_STARTED_EVENT, ATTENDANCE_STOPPED_EVENT } from "@/lib/dashboard-live-events";
 import { readTaskTimerSnapshot, type SharedTaskTimerSnapshot, writeTaskTimerSnapshot } from "@/lib/task-timer-storage";
 import { formatTimeOnlyInDhaka, getDhakaCutoffIso, parseDhakaDateTime, toDateTimeInputValue } from "@/lib/utils";
 
@@ -20,6 +21,12 @@ type DashboardTaskTimerActionProps = {
   initialActualStart?: Date | string | null;
   initialActualEnd?: Date | string | null;
   compact?: boolean;
+  /**
+   * Whether the workday is currently checked in. Leave undefined on surfaces that
+   * should not be gated by attendance at all (the history page edits past days),
+   * which is why this is a tri-state rather than a plain boolean.
+   */
+  initialAttendanceRunning?: boolean;
   onDoneClick?: () => void;
   onSnapshotChange?: (snapshot: TaskTimerSnapshot) => void;
   afterDoneSlot?: ReactNode;
@@ -33,6 +40,21 @@ export type TaskTimerSnapshot = {
   actualEnd: string;
   runningStartedAt: string;
 };
+
+/**
+ * A stop timestamp that keeps its seconds.
+ *
+ * `toDhakaOffsetIso` writes ":00" for seconds, which is right for attendance but
+ * wrong here: stopTimerAt measures the session as (stop - runningStartedAt), and
+ * runningStartedAt is full precision. Truncating the stop to the top of the
+ * minute makes that difference negative for any session started and ended inside
+ * the same minute, so the elapsed time was floored to zero and silently thrown
+ * away — the first pause on a fresh task banked nothing, which is why the button
+ * came back as "Start" instead of "Resume".
+ */
+function nowIsoWithSeconds() {
+  return new Date().toISOString();
+}
 
 function toInputDateTime(value?: Date | string | null) {
   if (!value) return "";
@@ -104,6 +126,7 @@ export function DashboardTaskTimerAction({
   initialActualStart,
   initialActualEnd,
   compact = false,
+  initialAttendanceRunning,
   onDoneClick,
   onSnapshotChange,
   afterDoneSlot,
@@ -125,10 +148,24 @@ export function DashboardTaskTimerAction({
   const [actualStart, setActualStart] = useState(toInputDateTime(initialActualStart));
   const [actualEnd, setActualEnd] = useState(toInputDateTime(initialActualEnd));
   const [runningStartedAt, setRunningStartedAt] = useState("");
+  /*
+   * Check in/out is echoed straight to the timers so the Start button locks the
+   * instant the user checks out, instead of staying live until router.refresh()
+   * brings the new server prop back. null means "no event seen yet, trust the
+   * prop"; the prop being undefined means this surface is not gated at all.
+   */
+  const [liveAttendanceRunning, setLiveAttendanceRunning] = useState<boolean | null>(null);
+  const attendanceRunning = liveAttendanceRunning ?? initialAttendanceRunning;
+  const attendanceBlocksStart = attendanceRunning === false;
   const isCompleted = status === "done";
   // A finished task can be picked up again; starting it reopens the day's entry
   // (status back to in_progress, completion reset), which the toast announces.
-  const canStart = canEdit && !saving && !runningStartedAt;
+  // A task cannot be started or resumed once the workday is closed, or its
+  // minutes would accrue against a day the user has already checked out of.
+  const canStart = canEdit && !saving && !runningStartedAt && !attendanceBlocksStart;
+  // Deliberately not gated on attendance: stopping the clock must always be
+  // possible, even once the workday is closed.
+  const canPause = canEdit && !saving && Boolean(runningStartedAt);
   const canDone = canEdit && !saving && !isCompleted && Boolean(onDoneClick);
 
   useEffect(() => {
@@ -228,6 +265,24 @@ export function DashboardTaskTimerAction({
   useEffect(() => {
     autoStoppingRef.current = false;
   }, [reportDate, runningStartedAt]);
+
+  useEffect(() => {
+    // Undefined prop = this surface opted out of attendance gating entirely, so
+    // don't let the events pull it into a gated state.
+    if (initialAttendanceRunning === undefined) {
+      return;
+    }
+
+    const handleStarted = () => setLiveAttendanceRunning(true);
+    const handleStopped = () => setLiveAttendanceRunning(false);
+
+    window.addEventListener(ATTENDANCE_STARTED_EVENT, handleStarted);
+    window.addEventListener(ATTENDANCE_STOPPED_EVENT, handleStopped);
+    return () => {
+      window.removeEventListener(ATTENDANCE_STARTED_EVENT, handleStarted);
+      window.removeEventListener(ATTENDANCE_STOPPED_EVENT, handleStopped);
+    };
+  }, [initialAttendanceRunning]);
 
   const trackedSecondsBase = trackedSeconds;
   const liveSessionSeconds =
@@ -406,6 +461,17 @@ export function DashboardTaskTimerAction({
     await persistUpdate(nextSnapshot, { refresh: true, successMessage });
   }
 
+  async function pauseTimer() {
+    if (!canPause) {
+      return;
+    }
+
+    // Same path as the day-end auto-stop: the session is banked into
+    // trackedSeconds and status stays in_progress, so Start comes back as
+    // "Resume" and picks up from the accumulated total.
+    await stopTimerAt(nowIsoWithSeconds(), "Task timer paused.");
+  }
+
   async function handleDoneClick() {
     if (!canDone || !onDoneClick) {
       return;
@@ -462,25 +528,69 @@ export function DashboardTaskTimerAction({
     }
   }, [actualStart, liveTrackedSeconds, now, reportDate, runningStartedAt, saving, trackedSecondsBase]);
 
+  useEffect(() => {
+    // Nothing to stop, and no listener to leak, when this task is not counting.
+    if (!runningStartedAt || saving) {
+      return;
+    }
+
+    function handleAttendanceStopped() {
+      if (autoStoppingRef.current) {
+        return;
+      }
+
+      autoStoppingRef.current = true;
+      void stopTimerAt(nowIsoWithSeconds(), "Task timer stopped with attendance.");
+    }
+
+    window.addEventListener(ATTENDANCE_STOPPED_EVENT, handleAttendanceStopped);
+    return () => window.removeEventListener(ATTENDANCE_STOPPED_EVENT, handleAttendanceStopped);
+    // Deliberately not depending on the per-second timer values: stopTimerAt
+    // derives the session from runningStartedAt and the stop timestamp, and the
+    // base it adds to (trackedSecondsBase, actualStart) is frozen for as long as
+    // the timer runs. Including them would tear this listener down and rebuild it
+    // on every tick for no gain.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningStartedAt, saving]);
+
   const buttonClass = compact
     ? "button-force-white !text-white [&_svg]:!text-white h-8 min-w-[3.875rem] shrink-0 justify-center rounded-full px-2 text-[0.625rem] font-semibold tracking-[0.01em] transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:scale-100 min-[420px]:min-w-[4.5rem] min-[420px]:px-2.5 min-[420px]:text-[0.6875rem] min-[560px]:min-w-[5.25rem] min-[560px]:px-3 min-[560px]:text-xs"
     : "button-force-white !text-white [&_svg]:!text-white h-9 min-w-[5.75rem] justify-center rounded-full px-3.5 text-sm font-semibold tracking-[0.01em] transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:scale-100";
   const startButtonClass = `${buttonClass} border border-white/20 bg-gradient-to-r from-[#06b6d4] via-[#14b8a6] to-[#22c55e] shadow-[0_12px_30px_rgba(6,182,212,0.34)] hover:from-[#0ea5e9] hover:via-[#06b6d4] hover:to-[#10b981] hover:shadow-[0_16px_34px_rgba(8,145,178,0.42)]`;
+  const pauseButtonClass = `${buttonClass} border border-white/20 bg-gradient-to-r from-[#f59e0b] via-[#f97316] to-[#fb7185] shadow-[0_12px_30px_rgba(249,115,22,0.32)] hover:from-[#d97706] hover:via-[#ea580c] hover:to-[#f43f5e] hover:shadow-[0_16px_34px_rgba(234,88,12,0.42)]`;
   const doneButtonClass = `${buttonClass} border border-white/20 bg-gradient-to-r from-[#7c3aed] via-[#8b5cf6] to-[#ec4899] shadow-[0_12px_30px_rgba(168,85,247,0.3)] hover:from-[#6d28d9] hover:via-[#7c3aed] hover:to-[#db2777] hover:shadow-[0_16px_34px_rgba(168,85,247,0.42)] disabled:from-[#94a3b8] disabled:to-[#94a3b8] disabled:shadow-none`;
 
   return (
     <div className={compact ? "flex w-full min-w-0 max-w-full flex-col gap-1.5" : "flex min-w-[10.625rem] flex-col gap-2"}>
       <div className={compact ? "flex min-w-0 flex-wrap items-center gap-1" : "flex flex-wrap items-center gap-1.5"}>
-        <Button
-          className={startButtonClass}
-          disabled={!canStart}
-          onClick={startTimer}
-          type="button"
-          variant="default"
-        >
-          <Play className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
-          {shouldShowResumeLabel ? "Resume" : "Start"}
-        </Button>
+        {/* Pause takes Start's place while running rather than sitting beside it:
+            the two are never usable at the same time, and the row has no width to
+            spare on the single-screen dashboard. */}
+        {runningStartedAt ? (
+          <Button
+            className={pauseButtonClass}
+            disabled={!canPause}
+            onClick={pauseTimer}
+            type="button"
+            variant="default"
+          >
+            <Pause className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+            Pause
+          </Button>
+        ) : (
+          <Button
+            className={startButtonClass}
+            disabled={!canStart}
+            onClick={startTimer}
+            // A disabled button with no reason is a dead end; say why on hover.
+            title={attendanceBlocksStart ? "Check in first — the workday timer is stopped." : undefined}
+            type="button"
+            variant="default"
+          >
+            <Play className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+            {shouldShowResumeLabel ? "Resume" : "Start"}
+          </Button>
+        )}
         {isCompleted ? null : (
           <Button
             className={doneButtonClass}
@@ -494,31 +604,53 @@ export function DashboardTaskTimerAction({
         )}
         {afterDoneSlot ? afterDoneSlot : null}
       </div>
-      <span
-        className={`inline-flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white/80 font-semibold tabular-nums text-slate-600 ${
-          compact ? "w-full px-2 py-1 text-[0.625rem]" : "px-3 py-1.5 text-xs"
-        }`}
-      >
-        <Timer className={`text-[#4f5ef7] ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}`} />
-        {formatDuration(liveTrackedSeconds)}
-      </span>
-      <div className={compact ? "grid gap-1.5 min-[480px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[480px]:items-center" : "grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"}>
-        <Input
-          className={compact ? "h-7 min-w-0 px-2 text-[0.6875rem]" : undefined}
-          disabled={!canEdit || saving || Boolean(runningStartedAt)}
-          onChange={(event) => patchClockTime("actualStart", event.target.value)}
-          type="time"
-          value={startClockValue}
-        />
-        {!compact ? <span className="hidden sm:inline" /> : <span className="hidden text-[0.625rem] text-slate-300 min-[480px]:inline">-</span>}
-        <Input
-          className={compact ? "h-7 min-w-0 px-2 text-[0.6875rem]" : undefined}
-          disabled={!canEdit || saving || Boolean(runningStartedAt) || !actualStart}
-          onChange={(event) => patchClockTime("actualEnd", event.target.value)}
-          type="time"
-          value={endClockValue}
-        />
-      </div>
+      {compact ? (
+        /* Elapsed, start and end on one line. The elapsed chip sizes to its own
+           text (auto) and the two fields split what is left, so the row holds
+           together without the chip stealing a line of its own. */
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5">
+          <span className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2 py-1 text-[0.625rem] font-semibold tabular-nums text-slate-600">
+            <Timer className="h-3 w-3 text-[#4f5ef7]" />
+            {formatDuration(liveTrackedSeconds)}
+          </span>
+          <Input
+            className="h-7 min-w-0 px-2 text-[0.6875rem]"
+            disabled={!canEdit || saving || Boolean(runningStartedAt)}
+            onChange={(event) => patchClockTime("actualStart", event.target.value)}
+            type="time"
+            value={startClockValue}
+          />
+          <Input
+            className="h-7 min-w-0 px-2 text-[0.6875rem]"
+            disabled={!canEdit || saving || Boolean(runningStartedAt) || !actualStart}
+            onChange={(event) => patchClockTime("actualEnd", event.target.value)}
+            type="time"
+            value={endClockValue}
+          />
+        </div>
+      ) : (
+        <>
+          <span className="inline-flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold tabular-nums text-slate-600">
+            <Timer className="h-3.5 w-3.5 text-[#4f5ef7]" />
+            {formatDuration(liveTrackedSeconds)}
+          </span>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+            <Input
+              disabled={!canEdit || saving || Boolean(runningStartedAt)}
+              onChange={(event) => patchClockTime("actualStart", event.target.value)}
+              type="time"
+              value={startClockValue}
+            />
+            <span className="hidden sm:inline" />
+            <Input
+              disabled={!canEdit || saving || Boolean(runningStartedAt) || !actualStart}
+              onChange={(event) => patchClockTime("actualEnd", event.target.value)}
+              type="time"
+              value={endClockValue}
+            />
+          </div>
+        </>
+      )}
       {!compact ? (
         <p className="text-[0.6875rem] font-medium text-slate-500">
           {runningStartedAt

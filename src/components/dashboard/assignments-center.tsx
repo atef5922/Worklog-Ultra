@@ -507,21 +507,29 @@ export function AssignmentsCenter({
   }
 
   return (
-    <div className="flex flex-col gap-3 sm:gap-4">
-      <PageHeader
-        icon={CheckSquare2}
-        subtitle="Hand work to teammates and track what came back."
-        title="Assignments"
-      />
+    /* One screen: the page never scrolls and the title stays fixed; the assign
+       form and both task lists scroll inside their own area. The dialogs further
+       down stay outside it — they are fixed-position overlays and have their own
+       scrolling. */
+    <div
+      className="flex flex-col gap-2 min-[900px]:min-h-0 min-[900px]:flex-1 min-[900px]:overflow-hidden"
+      data-fit-viewport
+    >
+      {/* No subtitle: the panels below say what the page does, and the line was
+          costing a row of height the rosters needed. */}
+      <PageHeader icon={CheckSquare2} title="Assignments" />
 
+      {/* This card takes the leftover height now, and the note box grows into it,
+          so the space lands somewhere useful instead of becoming a void. */}
       <div
-        className="dashboard-accent accent-indigo rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+        className="dashboard-accent accent-indigo flex min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] min-[900px]:flex-1"
         data-dashboard-panel
       >
         <PanelHeader icon={UserRoundPlus} title="Assign Task" />
-        <div className="mt-2.5 grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_20rem]">
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
+        <div className="mt-2 grid min-h-0 flex-1 gap-2.5 [&_[role=combobox]>span]:truncate [&_[role=combobox]]:h-10 [&_[role=combobox]]:overflow-hidden [&_input]:h-10 [&_label]:mb-1.5 [&_label]:text-[0.76rem] lg:grid-cols-[minmax(0,1fr)_15rem]">
+          <div className="flex min-h-0 flex-col gap-2.5">
+            {/* All four short fields on one row instead of two. */}
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <div>
                 <Label>From Department</Label>
                 <Select value={departmentId} onValueChange={setDepartmentId}>
@@ -552,8 +560,6 @@ export function AssignmentsCenter({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
               <div>
                 <Label>Task Title</Label>
                 <Input onChange={(event) => setTitle(event.target.value)} placeholder="Cross-team task title" value={title} />
@@ -574,9 +580,16 @@ export function AssignmentsCenter({
                 </Select>
               </div>
             </div>
-            <div>
+            {/* Note beside the file picker rather than stacked above it. */}
+            <div className="grid min-h-0 flex-1 gap-2.5 md:grid-cols-2">
+            <div className="flex min-h-0 flex-col">
               <Label>Assignment Note</Label>
-              <Textarea onChange={(event) => setNote(event.target.value)} placeholder="Explain what support is needed, expected output, or deadline." value={note} />
+              <Textarea
+                className="min-h-[4rem] flex-1"
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Explain what support is needed, expected output, or deadline."
+                value={note}
+              />
             </div>
             <div>
               <Label>Attach Files</Label>
@@ -588,10 +601,10 @@ export function AssignmentsCenter({
                 type="file"
               />
               <label
-                className="mt-2 flex cursor-pointer items-center justify-between rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-3 text-sm text-[var(--foreground)]"
+                className="mt-1 flex cursor-pointer items-center justify-between rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2.5 py-1.5 text-[0.78rem] text-[var(--foreground)]"
                 htmlFor={assignmentFileInputId}
               >
-                <span className="inline-flex items-center gap-2 rounded-xl bg-[#4f5ef7] px-3 py-2 text-xs font-semibold text-[var(--foreground)]">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#4f5ef7] px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--foreground)]">
                   <Paperclip className="h-3.5 w-3.5" />
                   Choose Files
                 </span>
@@ -604,7 +617,7 @@ export function AssignmentsCenter({
                 </span>
               </label>
               {assignmentFiles.length ? (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--muted-foreground)]">
+                <div className="mt-1.5 flex flex-wrap gap-1.5 text-[0.7rem] text-[var(--muted-foreground)]">
                   {assignmentFiles.map((file) => (
                     <span
                       key={`${file.name}-${file.size}`}
@@ -616,14 +629,15 @@ export function AssignmentsCenter({
                 </div>
               ) : null}
             </div>
-            <Button className="button-force-white bg-[#4f5ef7] hover:bg-[#4453eb]" disabled={saving} onClick={assignTask} type="button">
-              <SendHorizonal className="h-4 w-4" />
+            </div>
+            <Button className="button-force-white h-9 bg-[#4f5ef7] hover:bg-[#4453eb]" disabled={saving} onClick={assignTask} type="button">
+              <SendHorizonal className="h-3.5 w-3.5" />
               {saving ? "Assigning..." : "Assign Task"}
             </Button>
           </div>
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-semibold text-slate-900">How it works</p>
-            <div className="mt-3 space-y-3 text-sm text-slate-600">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+            <p className="text-[0.8rem] font-semibold text-slate-900">How it works</p>
+            <div className="mt-1.5 space-y-1 text-[0.72rem] leading-4 text-slate-600">
               <p>Use this page when your team needs help from another person or department.</p>
               <p>The assignment note becomes the original task brief.</p>
               <p>The assignee can work, track time, attach files, and submit directly from the assignment popup.</p>
@@ -632,9 +646,12 @@ export function AssignmentsCenter({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
+      {/* Content height, capped. Stretching this row was what left the big void
+          under the empty states — the cards now end where their content ends,
+          and only a long list turns the cap into a scroll. */}
+      <div className="grid min-h-0 shrink-0 gap-2 min-[900px]:max-h-[13rem] xl:grid-cols-2">
         <div
-          className="dashboard-accent accent-sky rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          className="dashboard-accent accent-sky flex min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
           data-dashboard-panel
         >
           <PanelHeader
@@ -647,22 +664,22 @@ export function AssignmentsCenter({
             title="Assigned By Me"
             tone="bg-sky-500/10 text-sky-500"
           />
-          <div className="mt-2.5 space-y-2">
+          <div className="dashboard-scroll-area mt-1.5 flex min-h-0 flex-1 flex-col gap-1.5 pr-0.5">
             {assignedByMe.length ? (
               (assignedByMe ?? []).map((task) => (
-                <div key={task.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
-                      <p className="text-sm text-[var(--muted-foreground)]">
+                <div key={task.id} className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[0.82rem] font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
+                      <p className="truncate text-[0.7rem] text-[var(--muted-foreground)]">
                         To: {task.user.name} - {task.user.department?.name ?? task.department.name}
                       </p>
                     </div>
                     <Badge variant={statusVariant(assignmentStatus(task))}>{assignmentStatus(task)}</Badge>
                   </div>
-                  <p className="mt-3 text-sm text-[var(--muted-foreground)]">{extractAssignmentAttachmentMeta(task.taskDescription).text || "No assignment note."}</p>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-3">
-                    <div className="text-sm text-[var(--muted-foreground)]">
+                  <p className="mt-1 line-clamp-2 text-[0.72rem] leading-4 text-[var(--muted-foreground)]">{extractAssignmentAttachmentMeta(task.taskDescription).text || "No assignment note."}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] p-1.5">
+                    <div className="min-w-0 flex-1 truncate text-[0.72rem] text-[var(--muted-foreground)]">
                       Latest note:
                       <span className="ml-2 font-medium text-[var(--foreground)]">{task.updates[0]?.note || "No submission note yet."}</span>
                     </div>
@@ -684,7 +701,7 @@ export function AssignmentsCenter({
                 </div>
               ))
             ) : (
-              <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-6 text-center">
+              <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-2.5 text-center">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/10 text-sky-500">
                   <Send className="h-4 w-4" />
                 </span>
@@ -695,7 +712,7 @@ export function AssignmentsCenter({
         </div>
 
         <div
-          className="dashboard-accent accent-teal rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+          className="dashboard-accent accent-teal flex min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
           data-dashboard-panel
         >
           <PanelHeader
@@ -708,22 +725,22 @@ export function AssignmentsCenter({
             title="Assigned To Me"
             tone="bg-teal-500/10 text-teal-500"
           />
-          <div className="mt-2.5 space-y-2">
+          <div className="dashboard-scroll-area mt-1.5 flex min-h-0 flex-1 flex-col gap-1.5 pr-0.5">
             {assignedToMe.length ? (
               (assignedToMe ?? []).map((task) => (
-                <div key={task.id} className="rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
-                      <p className="text-sm text-[var(--muted-foreground)]">
+                <div key={task.id} className="rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[0.82rem] font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
+                      <p className="truncate text-[0.7rem] text-[var(--muted-foreground)]">
                         From: {task.assigner?.name ?? "Workspace"} - {task.department.name}
                       </p>
                     </div>
                     <Badge variant={statusVariant(assignmentStatus(task))}>{assignmentStatus(task)}</Badge>
                   </div>
-                  <p className="mt-3 text-sm text-[var(--muted-foreground)]">{extractAssignmentAttachmentMeta(task.taskDescription).text || "No assignment note."}</p>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel)] p-3">
-                    <div className="text-sm text-[var(--muted-foreground)]">
+                  <p className="mt-1 line-clamp-2 text-[0.72rem] leading-4 text-[var(--muted-foreground)]">{extractAssignmentAttachmentMeta(task.taskDescription).text || "No assignment note."}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-[var(--panel-border)] bg-[var(--panel)] p-1.5">
+                    <div className="min-w-0 flex-1 truncate text-[0.72rem] text-[var(--muted-foreground)]">
                       Submit note:
                       <span className="ml-2 font-medium text-[var(--foreground)]">{task.latestReview?.submitNote || task.updates[0]?.note || "Open submit popup and send your update from here."}</span>
                     </div>
@@ -744,7 +761,7 @@ export function AssignmentsCenter({
                 </div>
               ))
             ) : (
-              <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-6 text-center">
+              <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-2.5 text-center">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/10 text-teal-500">
                   <Inbox className="h-4 w-4" />
                 </span>

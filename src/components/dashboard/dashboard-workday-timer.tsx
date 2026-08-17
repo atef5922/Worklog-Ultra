@@ -4,6 +4,7 @@ import { PlayCircle, Square } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ATTENDANCE_STARTED_EVENT, ATTENDANCE_STOPPED_EVENT } from "@/lib/dashboard-live-events";
 import { getDhakaCutoffIso, parseDhakaDateTime, toDateOnly, toDhakaOffsetIso } from "@/lib/utils";
 
 type AttendanceStatusValue = "present" | "late" | "half_day" | "absent" | "remote";
@@ -366,6 +367,7 @@ export function DashboardWorkdayTimer({
   async function startTimer() {
     if (saving) return;
     window.dispatchEvent(new CustomEvent("worklog:task-monitor-start", { detail: { source: "attendance", label: "Attendance" } }));
+    window.dispatchEvent(new CustomEvent(ATTENDANCE_STARTED_EVENT));
     const startTime = new Date();
     const nowLabel = toDhakaOffsetIso(startTime);
     await persist(
@@ -387,6 +389,9 @@ export function DashboardWorkdayTimer({
   async function stopTimer() {
     if (saving || !attendance.checkInAt) return;
     window.dispatchEvent(new CustomEvent("worklog:task-monitor-stop", { detail: { source: "attendance" } }));
+    // Fired here rather than after persist so it also covers the early return
+    // below, where the stale check-in is discarded without a round trip.
+    window.dispatchEvent(new CustomEvent(ATTENDANCE_STOPPED_EVENT));
     const safeCheckInAt = getValidActiveCheckInAt(attendance.checkInAt, dayKey, Date.now());
 
     if (!safeCheckInAt) {

@@ -17,7 +17,13 @@ export default async function PlanPage() {
   ]);
 
   return (
-    <div className="flex flex-col gap-3 sm:gap-4">
+    /* One screen. `fitViewport` tells PlanForm to fill the leftover height and
+       keep only its task list scrollable — the modal renders the same form
+       without it, where the content must flow at its natural height. */
+    <div
+      className="flex flex-col gap-2 min-[900px]:min-h-0 min-[900px]:flex-1 min-[900px]:overflow-hidden"
+      data-fit-viewport
+    >
       <PageHeader
         icon={ClipboardList}
         subtitle="Build today's task list with department-aware entries and clear priorities."
@@ -27,6 +33,7 @@ export default async function PlanPage() {
         assignableUsers={assignableUsers ?? []}
         currentUserId={user.id}
         departments={departments ?? []}
+        fitViewport
         initialTasks={[]}
         isTenderDepartment={isTenderDepartment}
         suggestions={suggestions ?? []}
