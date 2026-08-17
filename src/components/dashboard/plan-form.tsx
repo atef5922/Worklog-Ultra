@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { dispatchDashboardTasksCreated, scheduleDashboardTaskAutostart } from "@/lib/dashboard-live-events";
 import { OTHER_DEPARTMENT_ID } from "@/lib/recurring-task-templates";
 import { CONTINUATION_MARKER } from "@/lib/task-continuation";
-import { cn, toDateOnly } from "@/lib/utils";
+import { cn, createId, toDateOnly } from "@/lib/utils";
 
 type Department = { id: string; name: string };
 type AssignableUser = {
@@ -50,7 +50,7 @@ function normalizeTaskTitle(value: string) {
 
 function makeTask(defaultDepartmentId: string, defaultAssigneeId: string) {
   return {
-    clientId: crypto.randomUUID(),
+    clientId: createId(),
     taskTitle: "",
     taskDescription: "",
     priority: "normal",
@@ -125,7 +125,7 @@ export function PlanForm({
     () =>
       (initialTasks ?? []).length
         ? (initialTasks ?? []).map((task) => ({
-            clientId: crypto.randomUUID(),
+            clientId: createId(),
             ...task,
           }))
         : [makeTask(fallbackDepartmentId, fallbackAssigneeId)],
@@ -250,7 +250,7 @@ export function PlanForm({
 
       return [
         {
-          clientId: crypto.randomUUID(),
+          clientId: createId(),
           taskTitle: suggestion.title,
           taskDescription: suggestion.description,
           priority: suggestion.priority,

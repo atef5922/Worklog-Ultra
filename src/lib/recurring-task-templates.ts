@@ -1,4 +1,4 @@
-import { toDateOnly } from "@/lib/utils";
+import { createId, toDateOnly } from "@/lib/utils";
 
 export type RecurringTemplate = {
   id: string;
@@ -71,7 +71,7 @@ export function readRecurringTemplates(userId?: string) {
   try {
     const parsed = JSON.parse(raw) as Partial<RecurringTemplate>[];
     return parsed.map((template) => ({
-      id: template.id ?? crypto.randomUUID(),
+      id: template.id ?? createId(),
       taskTitle: template.taskTitle ?? "",
       taskDescription: template.taskDescription ?? "",
       priority: template.priority ?? "normal",
@@ -101,7 +101,7 @@ export function saveRecurringTemplate(template: RecurringTemplate, userId?: stri
   const current = readRecurringTemplates(userId);
   const nextTemplate = {
     ...template,
-    id: template.id || crypto.randomUUID(),
+    id: template.id || createId(),
   };
   const next = [nextTemplate, ...current.filter((item) => item.id !== nextTemplate.id)].slice(0, 20);
   writeRecurringTemplates(next, userId);
@@ -217,7 +217,7 @@ export function appendRecurringTemplateToTodayPlan(
   }
 
   parsed.tasks.push({
-    clientId: crypto.randomUUID(),
+    clientId: createId(),
     taskTitle: template.taskTitle,
     taskDescription: embedRecurringTaskDescription(template.taskDescription),
     priority: template.priority,

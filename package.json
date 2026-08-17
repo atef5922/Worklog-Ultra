@@ -65,7 +65,7 @@
     "extraResources": [
       { "from": ".next/standalone", "to": "standalone" },
       { "from": ".next/static", "to": "standalone/.next/static" },
-      { "from": "public", "to": "standalone/public" }
+      { "from": "public", "to": "standalone/public", "filter": ["**/*", "!uploads/**"] }
     ],
     "win": {
       "target": "nsis"

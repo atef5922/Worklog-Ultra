@@ -3,6 +3,7 @@
 import { Plus, Repeat2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { createId } from "@/lib/utils";
 import {
   OTHER_DEPARTMENT_ID,
   deleteRecurringTemplate,
@@ -67,7 +68,7 @@ export function RecurringTasksCenter({
     }
 
     const next = saveRecurringTemplate({
-      id: crypto.randomUUID(),
+      id: createId(),
       taskTitle: taskTitle.trim(),
       taskDescription: taskDescription.trim(),
       priority,
