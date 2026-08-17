@@ -267,7 +267,7 @@ export function DashboardRecurringQuickAdd({
                     </button>
                   </Dialog.Close>
                 </div>
-                <div className="overflow-y-auto px-5 py-5">
+                <div className="dashboard-scroll-area px-5 py-5">
                   <RecurringTasksCenter
                     allowOtherDepartment={allowOtherDepartment}
                     currentUserId={currentUserId}
@@ -282,7 +282,7 @@ export function DashboardRecurringQuickAdd({
         </div>
         }
       />
-      <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+      <div className="dashboard-scroll-area mt-2 min-h-0 flex-1 space-y-2 pr-0.5">
         {templates.length ? (
           visibleTemplates.map((template, index) => {
             const alreadyAdded = existingTaskTitleSet.has(template.taskTitle.trim().toLowerCase());

@@ -429,7 +429,7 @@ export default async function DashboardPage() {
               data-dashboard-panel
             >
               <PanelHeader icon={CircleAlert} title="High Priority" tone="bg-rose-500/10 text-rose-500" />
-              <div className="mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5">
+              <div className="dashboard-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-1.5 pr-0.5">
                 {urgentTasks.length ? (
                   urgentTasks.map((task) => (
                     <div
@@ -469,7 +469,7 @@ export default async function DashboardPage() {
                 title="Notices"
                 tone="bg-amber-500/10 text-amber-500"
               />
-              <div className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-0.5">
+              <div className="dashboard-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-0.5 pr-0.5">
                 {notices.map((notice, index) => (
                   <div
                     className="flex items-center gap-2 rounded-lg px-1.5 py-1 transition hover:bg-[var(--panel-muted)]"
@@ -487,9 +487,12 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Right column: fixed-size widgets; if a short screen cannot hold all
-            three, the column scrolls on its own rather than the page. */}
-        <div className="flex min-h-0 min-w-0 flex-col gap-2 min-[900px]:overflow-y-auto">
+        {/* Right column: three fixed-size widgets sized to fit the single screen,
+            so this must NOT be a scroll container. It used to be `overflow-y-auto`
+            as a safety net, and that net was the tall scrollbar down the right
+            edge — an element only ever paints a scrollbar when it is itself
+            `auto`/`scroll`, so the fix is to stop being one. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 min-[900px]:overflow-hidden">
           <DashboardProgressCard
             completedTasks={completedTasks}
             inProgressTasks={inProgressTasks}

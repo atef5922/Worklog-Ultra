@@ -581,7 +581,7 @@ export function DashboardWorkPlanSection({
           />
         </div>
 
-        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2 min-[900px]:snap-y min-[900px]:snap-mandatory">
+        <div className="dashboard-scroll-area min-h-0 flex-1 space-y-1.5 p-2 min-[900px]:snap-y min-[900px]:snap-mandatory">
           {visibleTasks.length ? (
             visibleTasks.map((task) => {
               const status = task.updates[0]?.status ?? "pending";

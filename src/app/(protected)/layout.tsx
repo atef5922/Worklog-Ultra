@@ -64,7 +64,10 @@ export default async function ProtectedLayout({
     <div className="min-h-dvh overflow-hidden bg-[var(--background)] text-[var(--foreground)] md:h-screen">
       <div className="flex min-h-dvh md:h-screen">
         <Sidebar user={sidebarUser} />
-        <div className="flex min-h-dvh min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto md:h-screen">
+        {/* dashboard-scroll lets globals.css switch this scroller off for a page
+            that opts into `data-fit-viewport`, so the entrance animation cannot
+            flash a scrollbar on a layout that is meant to fit exactly. */}
+        <div className="dashboard-scroll flex min-h-dvh min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto md:h-screen">
           <DashboardHeader user={headerUser} />
           <main className="flex min-h-0 flex-1 flex-col px-3 py-4 sm:px-4 sm:py-5 xl:px-6 2xl:px-7">
             <AssignmentNotificationLive />

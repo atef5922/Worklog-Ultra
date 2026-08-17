@@ -24,6 +24,8 @@
   --sidebar-foreground: #162235;
   --grid-line: rgba(88, 112, 150, 0.08);
   --shadow: 0 20px 45px rgba(87, 113, 150, 0.14);
+  --scroll-thumb: rgba(92, 111, 143, 0.26);
+  --scroll-thumb-hover: rgba(92, 111, 143, 0.46);
 }
 
 html[data-theme="dark"] {
@@ -43,6 +45,8 @@ html[data-theme="dark"] {
   --sidebar-foreground: #dfe7f3;
   --grid-line: rgba(159, 176, 200, 0.07);
   --shadow: 0 20px 60px rgba(3, 10, 24, 0.35);
+  --scroll-thumb: rgba(159, 176, 200, 0.24);
+  --scroll-thumb-hover: rgba(159, 176, 200, 0.42);
 }
 
 @theme inline {
@@ -221,7 +225,9 @@ html[data-theme="dark"] .auth-backdrop {
   background: linear-gradient(160deg, #000080 0%, #001f66 55%, #020b31 100%) !important;
   color: #f7fbff !important;
   box-shadow: var(--topbar-hairline);
-  backdrop-filter: blur(18px);
+  /* No backdrop-filter here: the gradient above is fully opaque, so the blur had
+     nothing to show through — it only cost a compositor pass on every frame of
+     the entrance animation. */
 }
 
 /*
@@ -235,6 +241,184 @@ html[data-theme="dark"] .auth-backdrop {
     flex: 1 1 0%;
     min-height: 0;
     flex-direction: column;
+  }
+
+  /*
+   * A fit-viewport page is sized to end exactly at the bottom of the screen, so
+   * the scroller around it must never scroll — on either axis. Without this the
+   * few pixels the entrance animation lifts content by were enough to flash a
+   * scrollbar on every reload and then take it away once the animation landed.
+   */
+  .dashboard-scroll:has([data-fit-viewport]) {
+    overflow: hidden;
+  }
+}
+
+/*
+ * Every in-panel scroller on the dashboard.
+ *
+ * Declaring BOTH axes is the whole point: with only `overflow-y: auto` the
+ * other axis is still `visible`, and CSS then forces it to compute to `auto`
+ * too — which is where the stray horizontal scrollbar under the cards came
+ * from. Pinning overflow-x to hidden is what removes it.
+ */
+.dashboard-scroll-area {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+.dashboard-scroll-area::-webkit-scrollbar {
+  width: 6px;
+  height: 0;
+}
+
+.dashboard-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-scroll-area::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+}
+
+.dashboard-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+/* The rail is navy in both themes, so the default slate thumb would vanish. */
+.dashboard-sidebar .dashboard-scroll-area {
+  scrollbar-color: rgba(226, 236, 255, 0.26) transparent;
+}
+
+.dashboard-sidebar .dashboard-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(226, 236, 255, 0.26);
+}
+
+.dashboard-sidebar .dashboard-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(226, 236, 255, 0.44);
+}
+
+/*
+ * Entrance choreography.
+ *
+ * This used to run in framer-motion and GSAP, which meant the server HTML was
+ * emitted at `opacity: 0` and stayed invisible until hydration finished. On a
+ * reload that left the page blank except for the task monitor — the one strip
+ * with no animation of its own — so it read as a stuck element on an empty
+ * page. Driving the same motion from CSS means the first paint is already the
+ * real page and the animation is only decoration over it.
+ *
+ * fill-mode is `backwards`, never `both`: `both` keeps the end frame applied,
+ * and an animation's `transform` outranks the `:hover` lift on cards/panels.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /*
+   * These are the original GSAP entrance values, kept exactly: y 22px, scale
+   * 0.985, 0.58s on power3.out, 0.06s stagger. Only the engine changed. An
+   * earlier pass shortened them and the motion lost its weight, so the numbers
+   * are deliberate — shorten them and the premium feel goes with it.
+   */
+  @keyframes dashboard-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 1.5rem, 0) scale(0.985);
+    }
+  }
+
+  @keyframes dashboard-drop {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -1.11rem, 0);
+    }
+  }
+
+  @keyframes dashboard-slide-in {
+    from {
+      opacity: 0;
+      transform: translate3d(-1.8rem, 0, 0);
+    }
+  }
+
+  .dashboard-sidebar {
+    animation: dashboard-slide-in 0.42s cubic-bezier(0.215, 0.61, 0.355, 1) backwards;
+  }
+
+  .dashboard-topbar {
+    animation: dashboard-drop 0.32s cubic-bezier(0.215, 0.61, 0.355, 1) backwards;
+  }
+
+  /*
+   * Sections, then cards, then panels — one continuous 0.06s cascade in document
+   * order, the way the GSAP stagger read. The topbar and monitor strip carry
+   * `data-page-section` too but enter on their own terms, so they are excluded
+   * rather than overridden: the `animation` shorthand below would otherwise
+   * reset their delay back to 0.
+   */
+  [data-page-section]:not(.dashboard-topbar, .dashboard-monitor-strip),
+  [data-dashboard-card],
+  [data-dashboard-panel] {
+    animation: dashboard-rise 0.58s cubic-bezier(0.215, 0.61, 0.355, 1) backwards;
+  }
+
+  [data-page-section]:not(.dashboard-topbar, .dashboard-monitor-strip):nth-of-type(2) {
+    animation-delay: 0.06s;
+  }
+
+  [data-page-section]:not(.dashboard-topbar, .dashboard-monitor-strip):nth-of-type(3) {
+    animation-delay: 0.12s;
+  }
+
+  [data-dashboard-card] {
+    animation-delay: 0.12s;
+  }
+
+  [data-dashboard-card]:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  [data-dashboard-card]:nth-child(3) {
+    animation-delay: 0.24s;
+  }
+
+  [data-dashboard-card]:nth-child(4) {
+    animation-delay: 0.3s;
+  }
+
+  [data-dashboard-card]:nth-child(5) {
+    animation-delay: 0.36s;
+  }
+
+  [data-dashboard-panel] {
+    animation-delay: 0.18s;
+  }
+
+  [data-dashboard-panel]:nth-child(2) {
+    animation-delay: 0.24s;
+  }
+
+  [data-dashboard-panel]:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  /* Lands with the page instead of being the only thing on screen. */
+  .dashboard-monitor-strip {
+    animation: dashboard-rise 0.58s cubic-bezier(0.215, 0.61, 0.355, 1) 0.3s backwards;
+  }
+
+  /* Replays whenever its `key` changes, so a new figure pops without framer
+     having to hydrate first. */
+  @keyframes dashboard-value-pop {
+    from {
+      opacity: 0.5;
+      transform: scale(0.9);
+    }
+  }
+
+  .dashboard-value-pop {
+    animation: dashboard-value-pop 0.26s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
 }
 

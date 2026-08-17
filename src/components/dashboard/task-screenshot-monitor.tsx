@@ -77,7 +77,7 @@ export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { cur
 
   return (
     <section
-      className="mt-2.5 shrink-0 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-2.5 py-1.5 shadow-sm"
+      className="dashboard-monitor-strip mt-2.5 shrink-0 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-2.5 py-1.5 shadow-sm"
       data-page-section
     >
       {/* One compact line: this is a utility strip, not a panel — every pixel

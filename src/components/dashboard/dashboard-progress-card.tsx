@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { PieChart } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PanelHeader } from "@/components/dashboard/panel-header";
@@ -69,47 +68,38 @@ export function DashboardProgressCard({
       : "conic-gradient(#e8eef8 0deg 360deg)";
 
   return (
-    <motion.div
+    /*
+     * No framer entrance here. This card was the last one still hiding its
+     * server-rendered markup behind `initial={{ opacity: 0 }}`, which is why it
+     * always arrived after the rest of the dashboard. The shared CSS entrance on
+     * `[data-dashboard-panel]` covers it now, and so does the CSS hover lift.
+     */
+    <div
       className="dashboard-accent accent-violet shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
       data-dashboard-panel
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.38, ease: "easeOut" }}
-      whileHover={{ y: -3, boxShadow: "0 24px 52px rgba(87, 113, 150, 0.18)" }}
     >
       <PanelHeader icon={PieChart} title="Today's Progress" tone="bg-violet-500/10 text-violet-500" />
       {/* Ring beside the legend keeps this card short enough for the
           single-screen dashboard without shrinking the numbers. */}
       <div className="mt-2 flex items-center gap-3">
-        <motion.div
+        <div
           className="dashboard-progress-ring flex h-[4rem] w-[4rem] shrink-0 items-center justify-center rounded-full"
-          key={`${plannedTasks}-${completedTasks}-${inProgressTasks}-${pendingTasks}`}
-          layout
-          transition={{ duration: 0.42, ease: "easeOut" }}
           style={{ background: ringBackground }}
         >
           <div className="flex h-[2.875rem] w-[2.875rem] flex-col items-center justify-center rounded-full bg-[var(--panel)]">
-            <motion.p
-              className="text-[1.15rem] font-bold leading-none text-[var(--foreground)]"
-              key={plannedTasks}
-              initial={{ opacity: 0.45, scale: 0.88 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.26 }}
-            >
+            {/* Keyed so a changed total remounts the node and replays the CSS
+                pop; on first paint it plays once with the page. */}
+            <p className="dashboard-value-pop text-[1.15rem] font-bold leading-none text-[var(--foreground)]" key={plannedTasks}>
               {plannedTasks}
-            </motion.p>
+            </p>
             <p className="mt-0.5 text-[0.58rem] leading-none text-[var(--muted-foreground)]">Total</p>
           </div>
-        </motion.div>
+        </div>
         <div className="min-w-0 flex-1 space-y-1">
           {items.map((item) => (
-            <motion.div
+            <div
               className="flex items-center justify-between gap-2 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2 py-1 text-[0.75rem]"
-              key={`${item.label}-${item.value}`}
-              layout
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.24 }}
+              key={item.label}
             >
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className={`h-2 w-2 shrink-0 rounded-full ${item.color}`} />
@@ -118,10 +108,10 @@ export function DashboardProgressCard({
               <span className="shrink-0 font-semibold tabular-nums text-[var(--foreground)]">
                 {item.value} ({plannedTasks ? Math.round((item.value / plannedTasks) * 100) : 0}%)
               </span>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

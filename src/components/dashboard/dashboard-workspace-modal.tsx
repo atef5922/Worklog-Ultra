@@ -142,7 +142,7 @@ export function DashboardWorkspaceModal({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="dashboard-scroll-area min-h-0 flex-1 px-5 py-5">
             {activeTab === "plan" ? (
               <PlanForm
                 key={planResetToken}

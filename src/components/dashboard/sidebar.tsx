@@ -85,13 +85,10 @@ function SidebarContent({
           <p className="sidebar-force-white truncate text-base font-bold tracking-[-0.02em]">WorkLog Ultra</p>
         </div>
       </div>
-      <motion.nav
-        animate={{ opacity: 1, x: 0 }}
-        // pr leaves room for the 4px hover slide, and overflow-x-hidden makes
-        // sure a wider label can never turn this into a horizontal scrollbar.
-        className="mt-4 min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden pr-1.5"
-        initial={{ opacity: 0, x: -18 }}
-        transition={{ duration: 0.38, ease: "easeOut" }}
+      <nav
+        // pr leaves room for the 4px hover slide, and dashboard-scroll-area pins
+        // overflow-x so a wider label can never turn this into a horizontal bar.
+        className="dashboard-scroll-area mt-4 min-h-0 flex-1 space-y-0.5 pr-1.5"
       >
         {navItems.map((item) => {
           const active = pathname === item.href;
@@ -144,7 +141,7 @@ function SidebarContent({
 
           return linkNode;
         })}
-      </motion.nav>
+      </nav>
       <div className={cn("mt-auto shrink-0 space-y-0.5 pt-2", mobile && "mb-4")}>
         {mobile ? <Dialog.Close asChild>{settingsLink}</Dialog.Close> : settingsLink}
         <button
@@ -166,14 +163,13 @@ export function Sidebar({ user }: { user: DashboardSidebarUser }) {
   const pathname = usePathname();
 
   return (
-    <motion.aside
-      animate={{ opacity: 1, x: 0 }}
-      className="sticky top-0 hidden h-screen w-[12.8472rem] shrink-0 bg-[linear-gradient(160deg,#000080_0%,#001f66_55%,#020b31_100%)] px-3 pb-3 lg:flex lg:flex-col"
-      initial={{ opacity: 0, x: -26 }}
-      transition={{ duration: 0.42, ease: "easeOut" }}
+    /* Entrance is CSS (`.dashboard-sidebar` in globals.css) so the rail paints
+       with the server HTML rather than appearing only once React hydrates. */
+    <aside
+      className="dashboard-sidebar sticky top-0 hidden h-screen w-[12.8472rem] shrink-0 bg-[linear-gradient(160deg,#000080_0%,#001f66_55%,#020b31_100%)] px-3 pb-3 lg:flex lg:flex-col"
     >
       <SidebarContent pathname={pathname} user={user} />
-    </motion.aside>
+    </aside>
   );
 }
 

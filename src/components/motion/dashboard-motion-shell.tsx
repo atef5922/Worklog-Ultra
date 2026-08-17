@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { gsap } from "gsap";
@@ -18,64 +18,39 @@ export function DashboardMotionShell({
     }
 
     const scope = scopeRef.current;
-    const panels = Array.from(
-      scope.querySelectorAll<HTMLElement>(
-        "[data-page-section], [data-dashboard-card], [data-dashboard-panel], [data-dashboard-row], [data-surface='card']",
-      ),
-    );
+    const floats = scope.querySelectorAll<HTMLElement>("[data-dashboard-float='soft']");
 
-    if (!panels.length) {
+    if (!floats.length) {
       return;
     }
 
-    const uniquePanels = panels.filter((panel, index) => panels.indexOf(panel) === index);
-
     const context = gsap.context(() => {
-      gsap.set(uniquePanels, {
-        autoAlpha: 0,
-        y: 22,
-        scale: 0.985,
+      gsap.to(floats, {
+        y: -5,
+        duration: 2.8,
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut",
+        stagger: 0.16,
       });
-
-      gsap.to(uniquePanels, {
-        autoAlpha: 1,
-        y: 0,
-        scale: 1,
-        duration: 0.58,
-        ease: "power3.out",
-        stagger: 0.06,
-        clearProps: "opacity,visibility,transform",
-      });
-
-      const floats = scope.querySelectorAll<HTMLElement>("[data-dashboard-float='soft']");
-      if (floats.length) {
-        gsap.to(floats, {
-          y: -5,
-          duration: 2.8,
-          repeat: -1,
-          yoyo: true,
-          ease: "sine.inOut",
-          stagger: 0.16,
-        });
-      }
     }, scope);
 
     return () => context.revert();
   }, [pathname, prefersReducedMotion]);
 
   return (
-    <motion.div
-      animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-      /* Hugs its content by default so anything rendered after it (task monitor)
-         sits right below. A page that wants the whole viewport opts in with
-         `data-fit-viewport`, which `.dashboard-shell` picks up in globals.css. */
-      className="dashboard-shell"
-      initial={prefersReducedMotion ? undefined : { opacity: 0, y: 18 }}
-      key={pathname}
-      ref={scopeRef}
-      transition={{ duration: 0.42, ease: "easeOut" }}
-    >
+    /*
+     * The panel entrance is CSS (`dashboard-rise` in globals.css), not GSAP or
+     * framer. Hiding server-rendered markup until hydration ran left the page
+     * blank on every reload; CSS animates from the first paint instead. The key
+     * still remounts this on navigation so the entrance replays per route.
+     *
+     * Hugs its content by default so anything rendered after it (task monitor)
+     * sits right below. A page that wants the whole viewport opts in with
+     * `data-fit-viewport`, which `.dashboard-shell` picks up in globals.css.
+     */
+    <div className="dashboard-shell" key={pathname} ref={scopeRef}>
       {children}
-    </motion.div>
+    </div>
   );
 }

@@ -459,12 +459,11 @@ export function DashboardHeader({
   }
 
   return (
-    <motion.header
-      animate={{ opacity: 1, y: 0 }}
+    /* Entrance is CSS (`.dashboard-topbar` in globals.css) so the bar is painted
+       with the server HTML instead of waiting for hydration to reveal it. */
+    <header
       className="dashboard-topbar sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 px-3 sm:px-4 xl:px-6 2xl:px-7"
       data-page-section
-      initial={{ opacity: 0, y: -16 }}
-      transition={{ duration: 0.32, ease: "easeOut" }}
     >
       <MobileSidebar
         user={{
@@ -474,12 +473,7 @@ export function DashboardHeader({
           avatarUrl: user.avatarUrl,
         }}
       />
-      <motion.div
-        animate={{ opacity: 1, x: 0 }}
-        className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-2 sm:gap-3 lg:gap-4"
-        initial={{ opacity: 0, x: 20 }}
-        transition={{ delay: 0.08, duration: 0.36, ease: "easeOut" }}
-      >
+      <div className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-2 sm:gap-3 lg:gap-4">
         <div className="hidden items-center gap-2 text-[var(--foreground)] md:flex">
           <Clock3 className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
           <div className="flex items-baseline gap-1.5 font-mono tabular-nums lg:gap-2">
@@ -702,7 +696,7 @@ export function DashboardHeader({
             </div>
           ) : null}
         </div>
-      </motion.div>
-    </motion.header>
+      </div>
+    </header>
   );
 }
