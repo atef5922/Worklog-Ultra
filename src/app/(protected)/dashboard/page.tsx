@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { BellRing, CalendarCheck2, Check, CheckCircle2, CircleAlert, ClipboardList, Clock3, PlayCircle, TimerReset } from "lucide-react";
 import { PanelHeader } from "@/components/dashboard/panel-header";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DashboardProgressCard } from "@/components/dashboard/dashboard-progress-card";
 import { DashboardRecurringQuickAdd } from "@/components/dashboard/dashboard-recurring-quick-add";
 import { DashboardTaskNotifier } from "@/components/dashboard/dashboard-task-notifier";
@@ -262,14 +261,11 @@ export default async function DashboardPage() {
       />
       <section className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4" data-page-section>
         <div className="flex min-w-0 items-center gap-2.5 sm:flex-1">
-          {/* The person being greeted, not a generic glyph — the pattern every
-              major dashboard uses, and it stays legible at 32px. */}
-          <Avatar className="dashboard-greeting-wave h-8 w-8 shrink-0 border-0 bg-[var(--panel-muted)] ring-2 ring-[#4f5ef7]/30">
-            {user.avatarUrl ? <AvatarImage alt={user.name} src={user.avatarUrl} /> : null}
-            <AvatarFallback className="text-[0.72rem] font-bold text-[#4f5ef7]">
-              {user.name.trim().charAt(0).toUpperCase() || "U"}
-            </AvatarFallback>
-          </Avatar>
+          {/* Colour emoji rather than a line icon: it reads instantly at this
+              size and carries the greeting's tone on its own. */}
+          <span aria-hidden className="dashboard-greeting-wave shrink-0 text-[1.15rem] leading-none">
+            👋
+          </span>
           <h1
             className="min-w-0 text-[0.95rem] font-semibold leading-tight text-[var(--foreground)] max-sm:line-clamp-2 sm:truncate sm:text-[1.02rem]"
             title={motivation.message}
