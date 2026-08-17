@@ -49,25 +49,49 @@ export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { cur
   }
 
   return (
-    <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-page-section>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 font-semibold text-slate-900"><Camera className="h-4 w-4" /> My Task Monitor</h2>
-          <p className="mt-1 text-xs text-slate-600">
-            {!isDesktop
-              ? "Open this project with the WorkLog Electron app to enable native screenshots."
-              : status?.running
-                ? `Running · ${status.active.length} active work source(s) · screenshot every 5 minutes · ${status.pending} pending`
-                : "Ready. Attendance or task Start will begin native desktop capture."}
-          </p>
-          {status?.folder ? <p className="mt-1 break-all text-[11px] text-slate-500">Saved folder: {status.folder} · Retention: {status.retentionDays} days</p> : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={!isDesktop} onClick={() => void exportScreenshots()} size="sm" type="button" variant="secondary">
-            <Download className="mr-2 h-4 w-4" /> Export
+    <section
+      className="mt-2.5 shrink-0 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] px-2.5 py-1.5 shadow-sm"
+      data-page-section
+    >
+      {/* One compact line: this is a utility strip, not a panel — every pixel
+          it gives back goes to the work plan above it. */}
+      <div className="flex items-center gap-2.5">
+        <span
+          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
+            status?.running ? "bg-emerald-500/12 text-emerald-500" : "bg-slate-500/10 text-slate-500"
+          }`}
+        >
+          <Camera className="h-3.5 w-3.5" />
+        </span>
+        <p className="shrink-0 text-[0.78rem] font-bold text-[var(--foreground)]">Task Monitor</p>
+        <p
+          className="min-w-0 flex-1 truncate text-[0.72rem] text-[var(--muted-foreground)]"
+          title={status?.folder ? `Saved to ${status.folder} · kept ${status.retentionDays} days` : undefined}
+        >
+          {!isDesktop
+            ? "Open the WorkLog desktop app to enable native screenshots."
+            : status?.running
+              ? `Running · ${status.active.length} source(s) · every 5 min · ${status.pending} pending`
+              : "Ready — Attendance or task Start begins capture."}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            className="h-7 rounded-lg px-2.5 text-[0.7rem]"
+            disabled={!isDesktop}
+            onClick={() => void exportScreenshots()}
+            type="button"
+            variant="secondary"
+          >
+            <Download className="h-3.5 w-3.5" /> Export
           </Button>
-          <Button disabled={!isDesktop} onClick={() => void window.worklogDesktop?.openTrackerFolder({ userId: currentUserId })} size="sm" type="button" variant="secondary">
-            <FolderOpen className="mr-2 h-4 w-4" /> Open screenshot folder
+          <Button
+            className="h-7 rounded-lg px-2.5 text-[0.7rem]"
+            disabled={!isDesktop}
+            onClick={() => void window.worklogDesktop?.openTrackerFolder({ userId: currentUserId })}
+            type="button"
+            variant="secondary"
+          >
+            <FolderOpen className="h-3.5 w-3.5" /> Folder
           </Button>
         </div>
       </div>

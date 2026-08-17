@@ -17,14 +17,12 @@ export function PanelHeader({
   tone?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[0.625rem] ${tone}`}>
-          <Icon className="h-3.5 w-3.5" />
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${tone}`}>
+          <Icon className="h-3 w-3" />
         </span>
-        <h3 className="truncate text-[0.92rem] font-bold tracking-[-0.01em] text-[var(--foreground)] sm:text-[0.98rem]">
-          {title}
-        </h3>
+        <h3 className="truncate text-[0.84rem] font-bold tracking-[-0.01em] text-[var(--foreground)]">{title}</h3>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

@@ -66,9 +66,10 @@ export function DashboardMotionShell({
   return (
     <motion.div
       animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-      /* No min-height/grow here: the page must end where its content ends, so
-         anything rendered after it (task monitor) sits right below the content
-         instead of being pushed under a viewport-tall spacer. */
+      /* Hugs its content by default so anything rendered after it (task monitor)
+         sits right below. A page that wants the whole viewport opts in with
+         `data-fit-viewport`, which `.dashboard-shell` picks up in globals.css. */
+      className="dashboard-shell"
       initial={prefersReducedMotion ? undefined : { opacity: 0, y: 18 }}
       key={pathname}
       ref={scopeRef}

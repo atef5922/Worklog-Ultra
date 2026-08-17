@@ -70,7 +70,7 @@ export function DashboardProgressCard({
 
   return (
     <motion.div
-      className="dashboard-accent accent-violet rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+      className="dashboard-accent accent-violet shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
       data-dashboard-panel
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -78,17 +78,19 @@ export function DashboardProgressCard({
       whileHover={{ y: -3, boxShadow: "0 24px 52px rgba(87, 113, 150, 0.18)" }}
     >
       <PanelHeader icon={PieChart} title="Today's Progress" tone="bg-violet-500/10 text-violet-500" />
-      <div className="mt-2.5 flex flex-col gap-2.5 sm:gap-3">
+      {/* Ring beside the legend keeps this card short enough for the
+          single-screen dashboard without shrinking the numbers. */}
+      <div className="mt-2 flex items-center gap-3">
         <motion.div
-          className="dashboard-progress-ring mx-auto flex h-20 w-20 shrink-0 items-center justify-center rounded-full sm:h-24 sm:w-24"
+          className="dashboard-progress-ring flex h-[4rem] w-[4rem] shrink-0 items-center justify-center rounded-full"
           key={`${plannedTasks}-${completedTasks}-${inProgressTasks}-${pendingTasks}`}
           layout
           transition={{ duration: 0.42, ease: "easeOut" }}
           style={{ background: ringBackground }}
         >
-          <div className="flex h-[3.5rem] w-[3.5rem] flex-col items-center justify-center rounded-full bg-[var(--panel)] sm:h-[4.25rem] sm:w-[4.25rem]">
+          <div className="flex h-[2.875rem] w-[2.875rem] flex-col items-center justify-center rounded-full bg-[var(--panel)]">
             <motion.p
-              className="text-[1.25rem] font-bold leading-none text-[var(--foreground)] sm:text-[1.5rem]"
+              className="text-[1.15rem] font-bold leading-none text-[var(--foreground)]"
               key={plannedTasks}
               initial={{ opacity: 0.45, scale: 0.88 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -96,13 +98,13 @@ export function DashboardProgressCard({
             >
               {plannedTasks}
             </motion.p>
-            <p className="mt-0.5 text-[0.625rem] text-[var(--muted-foreground)]">Total Tasks</p>
+            <p className="mt-0.5 text-[0.58rem] leading-none text-[var(--muted-foreground)]">Total</p>
           </div>
         </motion.div>
-        <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="min-w-0 flex-1 space-y-1">
           {items.map((item) => (
             <motion.div
-              className="grid grid-cols-1 gap-0.5 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2.5 py-1.5 text-[0.78rem] sm:text-[0.82rem]"
+              className="flex items-center justify-between gap-2 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2 py-1 text-[0.75rem]"
               key={`${item.label}-${item.value}`}
               layout
               initial={{ opacity: 0, x: 16 }}
@@ -110,10 +112,10 @@ export function DashboardProgressCard({
               transition={{ duration: 0.24 }}
             >
               <div className="flex min-w-0 items-center gap-1.5">
-                <span className={`h-2 w-2 shrink-0 rounded-full sm:h-2.5 sm:w-2.5 ${item.color}`} />
-                <span className="min-w-0 font-medium leading-snug text-[var(--muted-foreground)]">{item.label}</span>
+                <span className={`h-2 w-2 shrink-0 rounded-full ${item.color}`} />
+                <span className="min-w-0 truncate font-medium text-[var(--muted-foreground)]">{item.label}</span>
               </div>
-              <span className="pl-3.5 text-left font-semibold leading-snug text-[var(--foreground)]">
+              <span className="shrink-0 font-semibold tabular-nums text-[var(--foreground)]">
                 {item.value} ({plannedTasks ? Math.round((item.value / plannedTasks) * 100) : 0}%)
               </span>
             </motion.div>

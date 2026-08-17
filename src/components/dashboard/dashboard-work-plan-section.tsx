@@ -568,10 +568,12 @@ export function DashboardWorkPlanSection({
   return (
     <>
       <div
-        className="dashboard-accent accent-indigo overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] shadow-[var(--shadow)]"
+        // Height is pinned to exactly one task card so a half-cut card never
+        // shows; the rest scroll, snapping to each card's top edge.
+        className="dashboard-accent accent-indigo flex min-h-0 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] shadow-[var(--shadow)] min-[900px]:h-[16.35rem]"
         data-dashboard-panel
       >
-        <div className="border-b border-[var(--panel-border)] px-3 py-2.5 sm:px-3.5 sm:py-3">
+        <div className="shrink-0 border-b border-[var(--panel-border)] px-2.5 py-1.5">
           <PanelHeader
             action={<p className="text-[0.6875rem] font-medium text-[var(--muted-foreground)] sm:text-xs">{formattedDate}</p>}
             icon={ListChecks}
@@ -579,7 +581,7 @@ export function DashboardWorkPlanSection({
           />
         </div>
 
-        <div className="space-y-2 p-2.5 sm:p-3">
+        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2 min-[900px]:snap-y min-[900px]:snap-mandatory">
           {visibleTasks.length ? (
             visibleTasks.map((task) => {
               const status = task.updates[0]?.status ?? "pending";
@@ -596,7 +598,7 @@ export function DashboardWorkPlanSection({
 
               return (
                 <article
-                  className={`group rounded-[1.125rem] border p-3 transition sm:rounded-[1.375rem] sm:p-4 ${surfaceTone.article}`}
+                  className={`group overflow-hidden rounded-[1rem] border p-2.5 transition min-[900px]:h-[11rem] min-[900px]:snap-start ${surfaceTone.article}`}
                   data-dashboard-row
                   key={task.id}
                 >
@@ -666,8 +668,8 @@ export function DashboardWorkPlanSection({
                     </div>
 
                     {taskDescription ? (
-                      <div className={`rounded-xl px-2.5 py-2 sm:px-3 ${surfaceTone.note}`}>
-                        <p className="text-[0.6875rem] leading-5 text-slate-600 whitespace-pre-wrap break-words [overflow-wrap:anywhere] sm:text-xs sm:leading-6">
+                      <div className={`rounded-xl px-2.5 py-1.5 ${surfaceTone.note}`}>
+                        <p className="line-clamp-2 text-[0.68rem] leading-4 text-slate-600 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                           {taskDescription}
                         </p>
                       </div>
@@ -683,7 +685,7 @@ export function DashboardWorkPlanSection({
           )}
         </div>
 
-        <div className="border-t border-[var(--panel-border)] px-4 py-3 text-center sm:px-5">
+        <div className="shrink-0 border-t border-[var(--panel-border)] px-3 py-1 text-center">
           <Link className="text-xs font-semibold text-[#4f5ef7] hover:text-[#3f4ede] sm:text-sm" href="/dashboard/plan">
             View All Tasks
           </Link>

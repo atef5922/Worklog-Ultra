@@ -66,7 +66,7 @@ export default async function ProtectedLayout({
         <Sidebar user={sidebarUser} />
         <div className="flex min-h-dvh min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto md:h-screen">
           <DashboardHeader user={headerUser} />
-          <main className="flex-1 px-3 py-4 sm:px-4 sm:py-5 xl:px-6 2xl:px-7">
+          <main className="flex min-h-0 flex-1 flex-col px-3 py-4 sm:px-4 sm:py-5 xl:px-6 2xl:px-7">
             <AssignmentNotificationLive />
             <TaskTimerAutoCloser />
             <WorkspaceNoticeLive />

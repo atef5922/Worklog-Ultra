@@ -103,11 +103,11 @@ export function DashboardTimeSummary({
 
   return (
     <div
-      className="dashboard-accent accent-sky rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+      className="dashboard-accent accent-sky shrink-0 rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
       data-dashboard-panel
     >
       <PanelHeader icon={Timer} title="Time Summary" tone="bg-sky-500/10 text-sky-500" />
-      <div className="mt-2.5 flex items-center gap-2">
+      <div className="mt-1.5 flex items-center gap-2">
         <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--panel-muted)]">
           <div
             className="h-full rounded-full bg-gradient-to-r from-[#4f5ef7] to-[#22c55e] transition-[width] duration-500 ease-out"
@@ -116,11 +116,11 @@ export function DashboardTimeSummary({
         </div>
         <span className="shrink-0 font-mono text-[0.6875rem] font-bold tabular-nums text-[var(--muted-foreground)]">{completionPercent}%</span>
       </div>
-      <div className="mt-2.5 space-y-1.5">
+      <div className="mt-1.5 space-y-0.5">
         {items.map((item) => (
-          <div className="flex items-center justify-between gap-3 border-b border-[var(--panel-border)] pb-1.5 last:border-b-0 last:pb-0" key={item.label}>
-            <span className="min-w-0 text-[0.71875rem] font-medium text-[var(--muted-foreground)] sm:text-[0.75rem]">{item.label}</span>
-            <span className={`text-[0.71875rem] font-bold whitespace-nowrap sm:text-[0.75rem] ${item.label === "Remaining Time" ? "text-rose-500" : "text-[var(--foreground)]"}`}>
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--panel-border)] pb-0.5 last:border-b-0 last:pb-0" key={item.label}>
+            <span className="min-w-0 truncate text-[0.72rem] font-medium text-[var(--muted-foreground)]">{item.label}</span>
+            <span className={`whitespace-nowrap text-[0.72rem] font-bold tabular-nums ${item.label === "Remaining Time" ? "text-rose-500" : "text-[var(--foreground)]"}`}>
               {item.value}
             </span>
           </div>

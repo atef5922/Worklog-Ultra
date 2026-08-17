@@ -224,12 +224,12 @@ export function DashboardRecurringQuickAdd({
 
   return (
     <div
-      className="dashboard-accent accent-teal rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+      className="dashboard-accent accent-teal flex h-full min-h-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
       data-dashboard-panel
     >
       <PanelHeader
         icon={Repeat2}
-        title="Today's Recurring Suggestions"
+        title="Recurring"
         tone="bg-teal-500/10 text-teal-500"
         action={
         <div className="flex flex-wrap items-center gap-2.5">
@@ -282,7 +282,7 @@ export function DashboardRecurringQuickAdd({
         </div>
         }
       />
-      <div className="mt-2.5 space-y-2">
+      <div className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
         {templates.length ? (
           visibleTemplates.map((template, index) => {
             const alreadyAdded = existingTaskTitleSet.has(template.taskTitle.trim().toLowerCase());
@@ -329,13 +329,18 @@ export function DashboardRecurringQuickAdd({
             );
           })
         ) : (
-          <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3.5 py-3.5 text-[0.92rem] text-[var(--muted-foreground)] sm:px-4 sm:py-4 sm:text-sm">
-            No recurring task has been saved yet. Use <span className="font-semibold text-[var(--foreground)]">Manage</span> to save your regular work once.
+          <div className="flex h-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-2.5 py-2 text-center">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-teal-500/10 text-teal-500">
+              <Repeat2 className="h-3.5 w-3.5" />
+            </span>
+            <p className="text-[0.72rem] leading-4 text-[var(--muted-foreground)]">
+              Save repeat work once with <span className="font-semibold text-[var(--foreground)]">Manage</span>.
+            </p>
           </div>
         )}
       </div>
       {templates.length > pageSize ? (
-        <div className="mt-3 flex items-center justify-between border-t border-[var(--panel-border)] pt-3">
+        <div className="mt-2 flex shrink-0 items-center justify-between border-t border-[var(--panel-border)] pt-2">
           <p className="text-xs font-medium text-[var(--muted-foreground)]">
             Page {page + 1} of {totalPages}
           </p>

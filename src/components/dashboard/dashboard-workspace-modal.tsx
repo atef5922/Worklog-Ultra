@@ -85,7 +85,7 @@ export function DashboardWorkspaceModal({
     >
       <Dialog.Trigger asChild>
         <Button
-          className="button-force-white inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-2xl bg-[#4f5ef7] px-4 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(79,94,247,0.24)] transition hover:bg-[#4453eb] sm:h-11 sm:px-5"
+          className="button-force-white inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#4f5ef7] px-3 text-[0.8rem] font-semibold text-white shadow-[0_10px_22px_rgba(79,94,247,0.24)] transition hover:bg-[#4453eb] sm:px-3.5"
           type="button"
         >
           <Plus className="h-4 w-4" />

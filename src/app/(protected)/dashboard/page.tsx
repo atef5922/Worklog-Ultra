@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import { BellRing, CalendarCheck2, Check, CheckCircle2, CircleAlert, ClipboardList, Clock3, Hand, PlayCircle, TimerReset } from "lucide-react";
+import { BellRing, CalendarCheck2, Check, CheckCircle2, CircleAlert, ClipboardList, Clock3, PlayCircle, TimerReset } from "lucide-react";
 import { PanelHeader } from "@/components/dashboard/panel-header";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DashboardProgressCard } from "@/components/dashboard/dashboard-progress-card";
 import { DashboardRecurringQuickAdd } from "@/components/dashboard/dashboard-recurring-quick-add";
 import { DashboardTaskNotifier } from "@/components/dashboard/dashboard-task-notifier";
@@ -109,6 +110,7 @@ function formatTimeOnly(value?: Date | null) {
   if (!value) return "--:-- --";
   return formatDateTimeInDhaka(value).split(", ").pop() ?? "--:-- --";
 }
+
 
 function getMotivationalMessage(input: {
   name: string;
@@ -244,7 +246,10 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-3 sm:gap-4">
+    <div
+      className="flex flex-col gap-2 min-[900px]:min-h-0 min-[900px]:flex-1 min-[900px]:overflow-hidden"
+      data-fit-viewport
+    >
       <DashboardTaskNotifier
         tasks={(data.tasks ?? []).map((task) => ({
           id: task.id,
@@ -255,13 +260,18 @@ export default async function DashboardPage() {
           taskDescription: task.taskDescription,
         }))}
       />
-      <section className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4" data-page-section>
+      <section className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4" data-page-section>
         <div className="flex min-w-0 items-center gap-2.5 sm:flex-1">
-          <span className="dashboard-greeting-wave inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.875rem] bg-[linear-gradient(140deg,#6172ff_0%,#7c6cf8_46%,#a855f7_100%)] text-white">
-            <Hand className="h-4.5 w-4.5" strokeWidth={2.3} />
-          </span>
+          {/* The person being greeted, not a generic glyph — the pattern every
+              major dashboard uses, and it stays legible at 32px. */}
+          <Avatar className="dashboard-greeting-wave h-8 w-8 shrink-0 border-0 bg-[var(--panel-muted)] ring-2 ring-[#4f5ef7]/30">
+            {user.avatarUrl ? <AvatarImage alt={user.name} src={user.avatarUrl} /> : null}
+            <AvatarFallback className="text-[0.72rem] font-bold text-[#4f5ef7]">
+              {user.name.trim().charAt(0).toUpperCase() || "U"}
+            </AvatarFallback>
+          </Avatar>
           <h1
-            className="min-w-0 text-[1.05rem] font-semibold leading-tight text-[var(--foreground)] max-sm:line-clamp-2 sm:truncate sm:text-[1.18rem] lg:text-xl"
+            className="min-w-0 text-[0.95rem] font-semibold leading-tight text-[var(--foreground)] max-sm:line-clamp-2 sm:truncate sm:text-[1.02rem]"
             title={motivation.message}
           >
             {motivation.message}
@@ -313,7 +323,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-5 gap-1.5 sm:gap-2 xl:gap-2.5" data-page-section>
+      <section className="grid shrink-0 grid-cols-5 gap-1.5 sm:gap-2 xl:gap-2.5" data-page-section>
         {statCards.map((item, index) => {
           const style = statCardStyles[index % statCardStyles.length];
           const Icon = style.icon;
@@ -324,64 +334,50 @@ export default async function DashboardPage() {
 
           return (
             <Link
-              className={`group relative min-h-[6rem] min-w-0 overflow-hidden rounded-[0.875rem] border p-1.5 transition hover:-translate-y-0.5 sm:min-h-[7.25rem] sm:rounded-[1rem] sm:p-2 lg:min-h-[8.25rem] lg:p-2.5 ${style.card} ${style.border} ${style.shadow}`}
+              className={`group relative flex min-w-0 items-center gap-2 overflow-hidden rounded-[0.875rem] border p-2 transition hover:-translate-y-0.5 sm:rounded-[1rem] sm:p-2.5 ${style.card} ${style.border} ${style.shadow}`}
               data-dashboard-card
               href={item.href}
               key={item.title}
+              title={`${item.title} · ${item.linkLabel}`}
             >
               <div className={`absolute inset-x-0 top-0 h-1 ${style.accent}`} />
-              <div className="pointer-events-none absolute inset-y-1 right-0 w-[28%] sm:w-[30%]">
+              <div className="pointer-events-none absolute -right-1 bottom-0 top-1 w-[26%] opacity-90">
                 <Image
-                  alt={item.title}
-                  className="object-contain object-right-center"
+                  alt=""
+                  aria-hidden
+                  className="object-contain object-right-bottom"
                   data-dashboard-float="soft"
                   fill
-                  sizes="(max-width: 640px) 64px, (max-width: 1280px) 120px, 180px"
+                  sizes="120px"
                   src={style.art}
                 />
               </div>
-              <div className="relative flex items-start justify-between gap-1 pr-[4%] sm:pr-[8%]">
-                <div className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-[0.625rem] shadow-sm sm:h-7 sm:w-7 lg:h-8 lg:w-8 ${style.iconWrap}`}>
-                  <Icon className="relative h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                </div>
-                <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-right text-[0.4375rem] font-semibold uppercase tracking-[0.08em] text-slate-600 min-[1100px]:inline-block">
-                  {style.label}
-                </span>
+              <div className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] shadow-sm ${style.iconWrap}`}>
+                <Icon className="h-4 w-4" />
               </div>
-              <div className="relative mt-1.5 pr-[10%] sm:mt-2 sm:pr-[16%]">
-                <p className="truncate text-[0.8rem] font-bold leading-none text-slate-900 sm:text-[0.98rem] lg:text-[1.08rem]">{item.value}</p>
-                <p className="mt-1 line-clamp-2 text-[0.58rem] font-semibold leading-tight text-slate-700 sm:text-[0.68rem] lg:text-[0.8rem]">
+              <div className="relative min-w-0 flex-1 pr-[22%]">
+                <p className="truncate text-[1.25rem] font-bold leading-none tabular-nums text-slate-900">{item.value}</p>
+                <p className="mt-0.5 truncate text-[0.68rem] font-semibold leading-tight text-slate-600">
                   <span className="sm:hidden">{compactTitle}</span>
                   <span className="hidden sm:inline">{item.title}</span>
                 </p>
-              </div>
-              <div className="relative mt-1.5 flex items-center justify-between gap-1 border-t border-slate-200 pt-1.5 sm:mt-2.5 sm:pt-2">
-                <div className="flex items-center gap-0.5 sm:gap-1">
-                  <span className={`h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2 ${style.accent}`} />
-                  <span className="h-1.5 w-3 rounded-full bg-slate-300 sm:h-2 sm:w-5 lg:w-6" />
-                  <span className="h-1.5 w-4 rounded-full bg-slate-200 sm:h-2 sm:w-7 lg:w-10" />
-                </div>
-                <div className="truncate text-[0.52rem] font-semibold text-slate-600 transition group-hover:text-slate-900 sm:text-[0.62rem] lg:text-[0.72rem]">
+                <p className="mt-0.5 truncate text-[0.6rem] font-bold uppercase tracking-[0.1em] text-slate-500 transition group-hover:text-[#4f5ef7]">
                   <span className="sm:hidden">{compactLinkLabel}</span>
                   <span className="hidden sm:inline">{item.linkLabel}</span>
-                </div>
+                </p>
               </div>
             </Link>
           );
         })}
       </section>
 
-      <section className="grid gap-3 min-[900px]:grid-cols-[minmax(0,1fr)_15.5rem] lg:grid-cols-[minmax(0,1fr)_18.125rem]" data-page-section>
-        <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
-          <DashboardRecurringQuickAdd
-            allowOtherDepartment={user.role === "admin"}
-            currentUserDepartmentId={user.departmentId || departments[0]?.id || ""}
-            isTenderDepartment={isTenderDepartment}
-            currentUserId={user.id}
-            departments={departments ?? []}
-            existingTaskTitles={(activeTasks ?? []).map((task) => task.taskTitle)}
-          />
-
+      <section
+        className="grid min-h-0 gap-2 min-[900px]:flex-1 min-[900px]:grid-cols-[minmax(0,1fr)_15.5rem] lg:grid-cols-[minmax(0,1fr)_18.125rem]"
+        data-page-section
+      >
+        {/* Left column: the work plan owns the leftover height and scrolls
+            inside itself, so the page never grows past one screen. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-2">
           <DashboardWorkPlanSection
             canEdit={editAccess.allowed}
             currentUserId={user.id}
@@ -418,30 +414,36 @@ export default async function DashboardPage() {
             }))}
           />
 
-          {/*
-            Only the left column absorbs leftover height: these two are list
-            panels that take extra space gracefully. The right column's cards
-            (especially Attendance) must never stretch — they turn into mostly
-            empty boxes when the work plan grows long.
-          */}
-          <div className="grid min-w-0 flex-1 gap-3 2xl:grid-cols-2">
+          {/* Support strip: fixed height, each panel scrolls inside itself so
+              the row never pushes the page past one screen. */}
+          {/* Takes whatever the fixed-height work plan leaves, so these three
+              breathe instead of scrolling inside a cramped strip. */}
+          <div className="grid min-h-0 min-w-0 gap-2 min-[900px]:flex-1 min-[900px]:grid-cols-3">
+            <DashboardRecurringQuickAdd
+              allowOtherDepartment={user.role === "admin"}
+              currentUserDepartmentId={user.departmentId || departments[0]?.id || ""}
+              isTenderDepartment={isTenderDepartment}
+              currentUserId={user.id}
+              departments={departments ?? []}
+              existingTaskTitles={(activeTasks ?? []).map((task) => task.taskTitle)}
+            />
+
             <div
-              className="dashboard-accent accent-rose flex h-full min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+              className="dashboard-accent accent-rose flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
               data-dashboard-panel
             >
-              <PanelHeader icon={CircleAlert} title="High Priority Tasks" tone="bg-rose-500/10 text-rose-500" />
-              <div className="mt-2.5 flex flex-1 flex-col gap-1.5">
+              <PanelHeader icon={CircleAlert} title="High Priority" tone="bg-rose-500/10 text-rose-500" />
+              <div className="mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5">
                 {urgentTasks.length ? (
                   urgentTasks.map((task) => (
                     <div
-                      className="flex items-start justify-between gap-2.5 rounded-xl border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2.5 py-2 transition hover:-translate-y-0.5 hover:border-rose-500/30 hover:bg-rose-500/5"
+                      className="flex items-center gap-2 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2 py-1 transition hover:border-rose-500/40 hover:bg-rose-500/5"
                       key={task.id}
+                      title={`${task.taskTitle} · ${task.user.department?.name ?? "General"}`}
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="line-clamp-2 break-words text-sm font-semibold leading-snug text-[var(--foreground)]">{task.taskTitle}</p>
-                        <p className="mt-0.5 line-clamp-1 break-words text-xs text-[var(--muted-foreground)]">{task.user.department?.name ?? "General"}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-rose-500/10 px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-[0.1em] text-rose-500">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
+                      <p className="min-w-0 flex-1 truncate text-[0.76rem] font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
+                      <span className="shrink-0 rounded-full bg-rose-500/10 px-1.5 py-px text-[0.55rem] font-bold uppercase tracking-[0.1em] text-rose-500">
                         High
                       </span>
                     </div>
@@ -458,29 +460,30 @@ export default async function DashboardPage() {
             </div>
 
             <div
-              className="dashboard-accent accent-amber flex h-full min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+              className="dashboard-accent accent-amber flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
               data-dashboard-panel
             >
               <PanelHeader
                 action={
-                  <Link className="text-xs font-semibold text-[#4f5ef7] transition hover:text-[#3f4ede] sm:text-sm" href="/dashboard/help">
+                  <Link className="text-[0.7rem] font-semibold text-[#4f5ef7] transition hover:text-[#3f4ede]" href="/dashboard/help">
                     View all
                   </Link>
                 }
                 icon={BellRing}
-                title="Recent Notices"
+                title="Notices"
                 tone="bg-amber-500/10 text-amber-500"
               />
-              <div className="mt-2.5 flex flex-1 flex-col gap-0.5">
+              <div className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-0.5">
                 {notices.map((notice, index) => (
                   <div
-                    className="flex items-start gap-2.5 rounded-xl px-2.5 py-2 transition hover:bg-[var(--panel-muted)]"
+                    className="flex items-center gap-2 rounded-lg px-1.5 py-1 transition hover:bg-[var(--panel-muted)]"
                     key={notice}
+                    title={notice}
                   >
-                    <span className="mt-px inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[#4f5ef7]/10 font-mono text-[0.625rem] font-bold tabular-nums text-[#4f5ef7]">
-                      {String(index + 1).padStart(2, "0")}
+                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-amber-500/12 font-mono text-[0.55rem] font-bold tabular-nums text-amber-600">
+                      {index + 1}
                     </span>
-                    <p className="min-w-0 break-words text-[0.82rem] font-medium leading-snug text-[var(--foreground)]">{notice}</p>
+                    <p className="min-w-0 flex-1 truncate text-[0.76rem] font-medium text-[var(--foreground)]">{notice}</p>
                   </div>
                 ))}
               </div>
@@ -488,7 +491,9 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 sm:gap-4">
+        {/* Right column: fixed-size widgets; if a short screen cannot hold all
+            three, the column scrolls on its own rather than the page. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 min-[900px]:overflow-y-auto">
           <DashboardProgressCard
             completedTasks={completedTasks}
             inProgressTasks={inProgressTasks}
@@ -505,32 +510,42 @@ export default async function DashboardPage() {
           />
 
           <div
-            className="dashboard-accent accent-emerald flex flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-3 shadow-[var(--shadow)] sm:p-3.5"
+            className="dashboard-accent accent-emerald flex shrink-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5 shadow-[var(--shadow)]"
             data-dashboard-panel
           >
             <PanelHeader icon={CalendarCheck2} title="Attendance" tone="bg-emerald-500/10 text-emerald-500" />
-            <div className="mt-2.5 flex flex-col overflow-hidden rounded-[0.875rem] border border-[var(--panel-border)]">
-              <div className="flex flex-col divide-y divide-[var(--panel-border)]">
-                <div className="flex items-center gap-2 px-2.5 py-2">
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-                    <Check className="h-3.5 w-3.5" />
+            {/* In and Out side by side: two stacked rows cost ~30px that the
+                single-screen layout cannot spare. */}
+            <div className="mt-2 overflow-hidden rounded-[0.875rem] border border-[var(--panel-border)]">
+              <div className="grid grid-cols-2 divide-x divide-[var(--panel-border)]">
+                <div className="flex items-center gap-1.5 px-2 py-1.5">
+                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    <Check className="h-3 w-3" />
                   </span>
-                  <p className="min-w-0 flex-1 truncate text-[0.6875rem] font-medium text-[var(--muted-foreground)]">Check In</p>
-                  <p className="shrink-0 whitespace-nowrap text-[0.82rem] font-bold tabular-nums tracking-[-0.01em] text-[var(--foreground)]">
-                    {formatTimeOnly(attendance?.checkInAt)}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-[0.56rem] font-bold uppercase leading-none tracking-[0.12em] text-[var(--muted-foreground)]">
+                      In
+                    </p>
+                    <p className="mt-0.5 truncate text-[0.78rem] font-bold leading-none tabular-nums text-[var(--foreground)]">
+                      {formatTimeOnly(attendance?.checkInAt)}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 px-2.5 py-2">
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--panel-border)] bg-[var(--panel-alt)] text-[var(--muted-foreground)]">
-                    <Clock3 className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5 px-2 py-1.5">
+                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--panel-border)] bg-[var(--panel-alt)] text-[var(--muted-foreground)]">
+                    <Clock3 className="h-3 w-3" />
                   </span>
-                  <p className="min-w-0 flex-1 truncate text-[0.6875rem] font-medium text-[var(--muted-foreground)]">Check Out</p>
-                  <p className="shrink-0 whitespace-nowrap text-[0.82rem] font-bold tabular-nums tracking-[-0.01em] text-[var(--foreground)]">
-                    {formatTimeOnly(attendance?.checkOutAt)}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-[0.56rem] font-bold uppercase leading-none tracking-[0.12em] text-[var(--muted-foreground)]">
+                      Out
+                    </p>
+                    <p className="mt-0.5 truncate text-[0.78rem] font-bold leading-none tabular-nums text-[var(--foreground)]">
+                      {formatTimeOnly(attendance?.checkOutAt)}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className="bg-emerald-500/10 px-3 py-1.5 text-center text-[0.6875rem] font-semibold text-emerald-600">
+              <div className="border-t border-[var(--panel-border)] bg-emerald-500/10 px-2 py-0.5 text-center text-[0.62rem] font-semibold text-emerald-600">
                 {attendanceStatusLabel}
               </div>
             </div>

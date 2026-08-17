@@ -422,7 +422,7 @@ export function DashboardWorkdayTimer({
     return (
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <button
-          className={`button-force-white inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-2xl px-3.5 text-sm font-semibold transition sm:h-11 sm:px-4 ${
+          className={`button-force-white inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-[0.8rem] font-semibold transition sm:px-3.5 ${
             isRunning ? "bg-rose-500 hover:bg-rose-600" : "bg-emerald-500 hover:bg-emerald-600"
           } ${saving ? "cursor-not-allowed opacity-70" : ""}`}
           disabled={saving}

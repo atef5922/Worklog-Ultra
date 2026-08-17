@@ -4,7 +4,9 @@
   --font-sans: var(--font-manrope);
   /* Single source of truth for the top band: the dashboard header and the
      sidebar brand row must always share this height, or they visually drift. */
-  --topbar-height: 3.75rem;
+  /* 3.125rem renders 45px at the reference viewport (root = 14.4px there);
+     it stays proportional on other screens like every other rem in the app. */
+  --topbar-height: 3.125rem;
   --topbar-hairline: inset 0 -1px 0 rgba(223, 232, 247, 0.08);
   --background: #eef3fb;
   --foreground: #162235;
@@ -223,6 +225,20 @@ html[data-theme="dark"] .auth-backdrop {
 }
 
 /*
+ * A page opts into a single-screen layout by marking its root `data-fit-viewport`.
+ * Only then does the motion shell stretch to fill the main area; every other page
+ * keeps hugging its content so the task monitor stays directly below it.
+ */
+@media (min-width: 900px) {
+  .dashboard-shell:has([data-fit-viewport]) {
+    display: flex;
+    flex: 1 1 0%;
+    min-height: 0;
+    flex-direction: column;
+  }
+}
+
+/*
  * Panel accents.
  *
  * Each dashboard panel carries its own colour: a hairline gradient bar across
@@ -296,67 +312,36 @@ html[data-theme="dark"] .auth-backdrop {
   --accent-line: rgba(20, 184, 166, 0.4);
 }
 
-/* Greeting wave: the hand waves hello, the chip breathes a soft glow. */
-@keyframes greeting-wave-hand {
-  0%,
-  65%,
-  100% {
-    transform: rotate(0deg);
-  }
-  10% {
-    transform: rotate(14deg);
-  }
-  20% {
-    transform: rotate(-8deg);
-  }
-  30% {
-    transform: rotate(14deg);
-  }
-  40% {
-    transform: rotate(-4deg);
-  }
-  50% {
-    transform: rotate(10deg);
-  }
-}
-
-/* Edge highlight + rim, so the chip reads as a lit surface rather than a flat
-   blob. Kept inside box-shadow because the glow animates the same property. */
-@keyframes greeting-wave-glow {
+/*
+ * Greeting chip.
+ *
+ * Only a crisp rim and a top highlight - no outer glow. A 24px blur under a
+ * 32px chip reads as a smudge rather than depth at this size.
+ */
+@keyframes greeting-chip-breathe {
   0%,
   100% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.38),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.22),
-      0 3px 8px rgba(79, 94, 247, 0.24),
-      0 8px 20px rgba(139, 92, 246, 0.2);
+    transform: scale(1);
+    opacity: 1;
   }
   50% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.38),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.22),
-      0 5px 12px rgba(79, 94, 247, 0.32),
-      0 14px 30px rgba(139, 92, 246, 0.36);
+    transform: scale(1.07);
+    opacity: 0.92;
   }
 }
 
 .dashboard-greeting-wave {
-  /* Static fallback so the chip keeps its rim when motion is reduced. */
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.38),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
-    0 4px 10px rgba(79, 94, 247, 0.26),
-    0 10px 24px rgba(139, 92, 246, 0.24);
-  animation: greeting-wave-glow 3.4s ease-in-out infinite;
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
 .dashboard-greeting-wave svg {
-  transform-origin: 65% 85%;
-  animation: greeting-wave-hand 2.8s ease-in-out infinite;
+  animation: greeting-chip-breathe 4.2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dashboard-greeting-wave,
   .dashboard-greeting-wave svg {
     animation: none;
   }

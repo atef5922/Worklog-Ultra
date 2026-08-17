@@ -168,7 +168,7 @@ export function Sidebar({ user }: { user: DashboardSidebarUser }) {
   return (
     <motion.aside
       animate={{ opacity: 1, x: 0 }}
-      className="sticky top-0 hidden h-screen w-[14.25rem] shrink-0 bg-[linear-gradient(160deg,#000080_0%,#001f66_55%,#020b31_100%)] px-3 pb-3 lg:flex lg:flex-col"
+      className="sticky top-0 hidden h-screen w-[12.8472rem] shrink-0 bg-[linear-gradient(160deg,#000080_0%,#001f66_55%,#020b31_100%)] px-3 pb-3 lg:flex lg:flex-col"
       initial={{ opacity: 0, x: -26 }}
       transition={{ duration: 0.42, ease: "easeOut" }}
     >
