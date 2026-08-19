@@ -17,7 +17,7 @@ export function stripContinuationMeta(description?: string | null) {
   return description.slice(0, markerIndex).trim();
 }
 
-type ContinuationDayLog = {
+export type ContinuationDayLog = {
   date: string;
   progress: number;
   trackedMinutes: number;
@@ -90,6 +90,58 @@ export function buildContinuationDescription(input: {
   ].filter(Boolean);
 
   return [baseDescription, summaryLines.join("\n")].filter(Boolean).join("\n\n").trim();
+}
+
+export type ContinuationOverview = {
+  sourceDate: string;
+  totalDays: number;
+  overallTrackedMinutes: number;
+  dailyLogs: ContinuationDayLog[];
+};
+
+/**
+ * The embedded meta only ever holds *past* days - the day a task is actively
+ * running on isn't written back into its own description until it rolls over
+ * to the next one. This folds today's own tracked minutes/progress/note into
+ * the log at the right slot so a task that has been running non-stop for N
+ * days shows all N, not N-1.
+ */
+export function buildContinuationOverview(input: {
+  taskDescription?: string | null;
+  currentDate: string;
+  currentProgress: number;
+  currentTrackedMinutes: number;
+  currentNote?: string | null;
+}): ContinuationOverview | null {
+  const meta = extractContinuationMeta(input.taskDescription);
+
+  if (!meta) {
+    return null;
+  }
+
+  const dailyLogs = [...meta.dailyLogs];
+  const currentEntry: ContinuationDayLog = {
+    date: input.currentDate,
+    progress: Math.max(0, Math.round(input.currentProgress)),
+    trackedMinutes: Math.max(0, Math.round(input.currentTrackedMinutes)),
+    note: cleanLine(input.currentNote),
+  };
+  const existingIndex = dailyLogs.findIndex((entry) => entry.date === currentEntry.date);
+
+  if (existingIndex >= 0) {
+    dailyLogs[existingIndex] = currentEntry;
+  } else {
+    dailyLogs.push(currentEntry);
+  }
+
+  dailyLogs.sort((left, right) => left.date.localeCompare(right.date));
+
+  return {
+    sourceDate: meta.sourceDate,
+    totalDays: Math.max(meta.daysActive || 0, dailyLogs.length, 1),
+    overallTrackedMinutes: dailyLogs.reduce((sum, entry) => sum + entry.trackedMinutes, 0),
+    dailyLogs,
+  };
 }
 
 export function extractContinuationMeta(description?: string | null) {

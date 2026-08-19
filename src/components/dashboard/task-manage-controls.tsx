@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { Archive, CheckSquare, Pencil, Trash2, X } from "lucide-react";
+import { Archive, CheckSquare, Pencil, RotateCcw, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { dispatchDashboardTasksRemoved } from "@/lib/dashboard-live-events";
 import { embedHistoryMeta, isMovedToHistory, stripHistoryMeta } from "@/lib/task-history-shared";
 import { embedRecurringTaskDescription, isRecurringTaskDescription, stripRecurringTaskMeta } from "@/lib/recurring-task-templates";
+import { TASK_PRIORITY_OPTIONS } from "@/lib/task-priority";
+import { stripReopenMeta } from "@/lib/task-reopen";
 import { toDateOnly } from "@/lib/utils";
 
 const AUTO_PREDICTION_TEXT = /^Predicted from your work pattern and completion history\.?\s*/i;
@@ -31,8 +33,10 @@ export function TaskManageControls({
   hideDoneAction = false,
   showInlineDelete = false,
   showArchiveAction = false,
+  showRestoreAction = false,
   timerPanel,
   onMovedToHistory,
+  onRestoredToWorkPlan,
 }: {
   task: {
     id: string;
@@ -44,8 +48,11 @@ export function TaskManageControls({
   hideDoneAction?: boolean;
   showInlineDelete?: boolean;
   showArchiveAction?: boolean;
+  /** A quick icon button that sends a completed task back to today's open work plan. */
+  showRestoreAction?: boolean;
   timerPanel?: ReactNode;
   onMovedToHistory?: (taskId: string) => void;
+  onRestoredToWorkPlan?: (taskId: string) => void;
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -58,17 +65,29 @@ export function TaskManageControls({
   const [deleting, setDeleting] = useState(false);
   const [markingDone, setMarkingDone] = useState(false);
   const [movingToHistory, setMovingToHistory] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const isRecurringTask = isRecurringTaskDescription(task.taskDescription);
   const isAlreadyMovedToHistory = isMovedToHistory(task.taskDescription);
+  // Soft fills, not solid colour — the same light-tint/dark-text convention
+  // the chips use, so the row recedes into the card instead of shouting. Edit
+  // and the two icon-only utilities (Archive, Restore) share one neutral
+  // slate tone since none of them is a task "state"; Delete keeps its own
+  // tone because it is the one irreversible action in the row.
   const editButtonClass =
-    "button-force-white h-8 shrink-0 rounded-full border border-white/20 px-2.5 text-[0.625rem] font-semibold tracking-[0.01em] bg-gradient-to-r from-[#4f46e5] via-[#8b5cf6] to-[#ec4899] shadow-[0_10px_24px_rgba(99,102,241,0.32)] transition-all duration-200 hover:scale-[1.02] hover:from-[#4338ca] hover:via-[#7c3aed] hover:to-[#db2777] active:scale-95 min-[420px]:px-3 min-[420px]:text-xs";
+    "task-btn-neutral h-6 shrink-0 rounded-md border px-1.5 text-[0.5rem] font-semibold transition-colors duration-200 min-[420px]:px-2 min-[420px]:text-[0.5625rem]";
   const markDoneButtonClass =
-    "button-force-white h-8 shrink-0 rounded-full border border-white/20 px-2.5 text-[0.625rem] font-semibold tracking-[0.01em] bg-gradient-to-r from-[#06b6d4] via-[#3b82f6] to-[#8b5cf6] shadow-[0_10px_24px_rgba(59,130,246,0.3)] hover:scale-[1.02] hover:from-[#0891b2] hover:via-[#2563eb] hover:to-[#7c3aed] transition-all duration-200 disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none disabled:hover:scale-100 min-[420px]:px-3 min-[420px]:text-xs";
+    "task-btn-primary h-6 shrink-0 rounded-md border px-1.5 text-[0.5rem] font-semibold transition-colors duration-200 disabled:opacity-55 min-[420px]:px-2 min-[420px]:text-[0.5625rem]";
   const quickMoveButtonClass =
-    "button-force-white h-8 w-8 rounded-full border border-white/20 bg-gradient-to-r from-[#0f766e] via-[#0f9f8a] to-[#14b8a6] p-0 text-white shadow-[0_10px_24px_rgba(20,184,166,0.28)] transition-all duration-200 hover:scale-[1.02] hover:from-[#115e59] hover:via-[#0f766e] hover:to-[#0d9488] active:scale-95 disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none disabled:hover:scale-100";
+    "task-btn-neutral h-6 w-6 shrink-0 rounded-md border p-1 transition-colors duration-200 disabled:opacity-55";
+  const restoreButtonClass =
+    "task-btn-neutral h-6 w-6 shrink-0 rounded-md border p-1 transition-colors duration-200 disabled:opacity-55";
+  const deleteButtonClass =
+    "task-btn-danger h-6 shrink-0 rounded-md border px-1.5 text-[0.5rem] font-semibold transition-colors duration-200 min-[420px]:px-2 min-[420px]:text-[0.5625rem]";
 
   function toEditableDescription(value?: string | null) {
-    return stripHistoryMeta(stripRecurringTaskMeta(value)).replace(AUTO_PREDICTION_TEXT, "").trim();
+    return stripHistoryMeta(stripRecurringTaskMeta(stripReopenMeta(value)))
+      .replace(AUTO_PREDICTION_TEXT, "")
+      .trim();
   }
 
   async function saveTask() {
@@ -143,6 +162,27 @@ export function TaskManageControls({
     await moveTaskToHistory();
   }
 
+  async function restoreToWorkPlan() {
+    setRestoring(true);
+    const response = await fetch(`/api/dashboard/tasks/${task.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restore_to_dashboard" }),
+    });
+    const raw = await response.text();
+    const result = parseResponse(raw);
+    setRestoring(false);
+
+    if (!response.ok) {
+      toast.error(result.message);
+      return;
+    }
+
+    toast.success(result.message ?? "Task moved back to the work plan.");
+    onRestoredToWorkPlan?.(task.id);
+    router.refresh();
+  }
+
   async function deleteTask() {
     setDeleting(true);
     const response = await fetch(`/api/dashboard/tasks/${task.id}`, {
@@ -177,7 +217,7 @@ export function TaskManageControls({
         open={editOpen}
       >
         <Dialog.Trigger asChild>
-          <Button className={editButtonClass} size="sm" type="button" variant="default">
+          <Button className={editButtonClass} size="sm" type="button" variant="ghost">
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </Button>
@@ -208,10 +248,11 @@ export function TaskManageControls({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="critical">High Priority</SelectItem>
-                    <SelectItem value="high">Important</SelectItem>
-                    <SelectItem value="normal">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
+                    {TASK_PRIORITY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -255,10 +296,10 @@ export function TaskManageControls({
         <Dialog.Root onOpenChange={setDeleteOpen} open={deleteOpen}>
           <Dialog.Trigger asChild>
             <Button
-              className="h-8 shrink-0 rounded-full px-2.5 text-[0.625rem] text-rose-600 hover:bg-rose-50 hover:text-rose-700 min-[420px]:px-3 min-[420px]:text-xs"
+              className={deleteButtonClass}
               size="sm"
               type="button"
-              variant="outline"
+              variant="ghost"
             >
               <Trash2 className="h-3.5 w-3.5" />
               Delete
@@ -305,9 +346,24 @@ export function TaskManageControls({
           size="icon"
           title="Move this task to history"
           type="button"
-          variant="default"
+          variant="ghost"
         >
           <Archive className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
+
+      {showRestoreAction && compact ? (
+        <Button
+          aria-label="Move task back to today's work plan"
+          className={restoreButtonClass}
+          disabled={restoring}
+          onClick={() => void restoreToWorkPlan()}
+          size="icon"
+          title="Move this task back to today's work plan"
+          type="button"
+          variant="ghost"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
         </Button>
       ) : null}
 
@@ -318,7 +374,7 @@ export function TaskManageControls({
               className={markDoneButtonClass}
               disabled={isAlreadyMovedToHistory}
               size="sm"
-              variant="default"
+              variant="ghost"
               type="button"
             >
               <CheckSquare className="h-3.5 w-3.5" />

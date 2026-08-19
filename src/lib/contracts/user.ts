@@ -66,6 +66,7 @@ export type DashboardSidebarUser = {
   avatarUrl: string | null;
   extraAccess?: string[];
   assignmentNotifications?: number;
+  noticeNotifications?: number;
 };
 
 export type DashboardHeaderUser = {

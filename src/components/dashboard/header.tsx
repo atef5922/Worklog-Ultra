@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MobileSidebar } from "@/components/dashboard/sidebar";
 import { DashboardWorkdayTimer } from "@/components/dashboard/dashboard-workday-timer";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { NOTICES_READ_EVENT } from "@/lib/dashboard-live-events";
 import type { DashboardHeaderUser } from "@/lib/contracts/user";
 
 type AssignmentNotificationItem = {
@@ -310,9 +311,19 @@ export function DashboardHeader({
       pollNoticeNotifications().catch(() => null);
     }, 15000);
 
+    // The Notices page marks everything it shows as read on mount and fires
+    // this, so the bell count drops immediately instead of waiting out the
+    // rest of this interval.
+    function handleNoticesRead() {
+      pollNoticeNotifications().catch(() => null);
+    }
+
+    window.addEventListener(NOTICES_READ_EVENT, handleNoticesRead);
+
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      window.removeEventListener(NOTICES_READ_EVENT, handleNoticesRead);
     };
   }, []);
 
@@ -510,7 +521,7 @@ export function DashboardHeader({
         </div>
         <ThemeToggle className="hidden h-10 w-10 shrink-0 rounded-xl border border-[var(--panel-border)] bg-[var(--panel)] p-0 text-[var(--foreground)] shadow-[0_10px_24px_rgba(148,163,184,0.14)] hover:bg-[var(--panel-alt)] lg:inline-flex" />
         <Link
-          className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] lg:h-10 lg:w-10"
+          className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] min-[900px]:h-10 min-[900px]:w-10"
           href="/dashboard/messages"
         >
           <MessageSquareMore className="h-5 w-5" />
@@ -522,7 +533,7 @@ export function DashboardHeader({
         </Link>
         <div className="relative" ref={bellRef}>
           <button
-            className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] lg:h-10 lg:w-10"
+            className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] min-[900px]:h-10 min-[900px]:w-10"
             onClick={() => {
               setBellOpen((current) => !current);
               setNotificationDetail(null);
@@ -653,7 +664,7 @@ export function DashboardHeader({
         </div>
         <div className="relative" ref={menuRef}>
           <button
-            className="flex h-11 max-w-[15rem] items-center gap-2 rounded-xl px-2 transition hover:bg-[var(--panel-alt)] sm:max-w-none sm:gap-3 sm:px-3 lg:h-10"
+            className="flex h-11 max-w-[15rem] items-center gap-2 rounded-xl px-2 transition hover:bg-[var(--panel-alt)] sm:max-w-none sm:gap-3 sm:px-3 min-[900px]:h-10"
             onClick={() => setMenuOpen((current) => !current)}
             type="button"
           >

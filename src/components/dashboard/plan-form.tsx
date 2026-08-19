@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { dispatchDashboardTasksCreated, scheduleDashboardTaskAutostart } from "@/lib/dashboard-live-events";
 import { OTHER_DEPARTMENT_ID } from "@/lib/recurring-task-templates";
 import { CONTINUATION_MARKER } from "@/lib/task-continuation";
+import { formatTaskPriority, TASK_PRIORITY_OPTIONS, type TaskPriority } from "@/lib/task-priority";
 import { cn, createId, toDateOnly } from "@/lib/utils";
 
 type Department = { id: string; name: string };
@@ -27,7 +28,7 @@ type AssignableUser = {
 type Suggestion = {
   title: string;
   description: string;
-  priority: "low" | "normal" | "high" | "critical";
+  priority: TaskPriority;
   source: string;
 };
 type Task = {
@@ -403,7 +404,7 @@ export function PlanForm({
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5 text-[0.65rem]">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="rounded-full bg-teal-500/10 px-2 py-0.5 font-bold uppercase tracking-[0.12em] text-teal-600">
-                          {suggestion.priority}
+                          {formatTaskPriority(suggestion.priority)}
                         </span>
                         {lastSuggestedTitle === suggestion.title ? (
                           <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-600">
@@ -529,9 +530,9 @@ export function PlanForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {["low", "normal", "high", "critical"].map((priority) => (
-                        <SelectItem key={priority} value={priority}>
-                          {priority}
+                      {TASK_PRIORITY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -2,7 +2,8 @@
 
 import { CheckCircle2, BellRing, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getTaskStatusLabel } from "@/lib/dashboard-work-plan-filter";
 import { extractFollowUpMeta, isFollowUpDueNow } from "@/lib/task-follow-up";
 
 type NotifierTask = {
@@ -43,7 +44,7 @@ export function DashboardTaskNotifier({ tasks = [] }: { tasks: NotifierTask[] })
   const [popup, setPopup] = useState<PopupState | null>(null);
   const todayKey = useMemo(() => getTodayKey(), []);
 
-  function dismissPopup(nextPopup: PopupState | null) {
+  const dismissPopup = useCallback((nextPopup: PopupState | null) => {
     if (typeof window !== "undefined" && nextPopup) {
       if (nextPopup.kind === "completed") {
         window.localStorage.setItem(`task-popup-completed:${todayKey}:${nextPopup.task.id}`, "seen");
@@ -58,7 +59,7 @@ export function DashboardTaskNotifier({ tasks = [] }: { tasks: NotifierTask[] })
     }
 
     setPopup(null);
-  }
+  }, [todayKey]);
 
   useEffect(() => {
     if (!popup || popup.kind !== "completed") {
@@ -70,7 +71,23 @@ export function DashboardTaskNotifier({ tasks = [] }: { tasks: NotifierTask[] })
     }, 3000);
 
     return () => window.clearTimeout(timeout);
-  }, [popup]);
+  }, [dismissPopup, popup]);
+
+  useEffect(() => {
+    if (!popup) {
+      return;
+    }
+
+    // A full-screen overlay with no keyboard exit traps anyone not on a mouse.
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        dismissPopup(popup);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dismissPopup, popup]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -172,110 +189,123 @@ export function DashboardTaskNotifier({ tasks = [] }: { tasks: NotifierTask[] })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.32)] p-4 backdrop-blur-sm">
-      <div className="w-full max-w-[420px] rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-        <div className="flex justify-end">
-          <button
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-            onClick={() => dismissPopup(popup)}
-            type="button"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="flex flex-col items-center text-center">
-          <div
-            className={`flex h-20 w-20 items-center justify-center rounded-full ${
-              popup.kind === "completed"
-                ? "bg-emerald-100 text-emerald-600"
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[rgba(15,23,42,0.32)] p-4 backdrop-blur-sm"
+      role="dialog"
+    >
+      {/* Capped and compact. Uncapped the card grew with the list — five rows put
+          it around 795px tall, which runs off the bottom of a short laptop screen
+          and takes both action buttons with it. The body scrolls now and the
+          buttons stay pinned to the card. */}
+      <div className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-[22rem] flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+        {/* Over the card rather than on a row of its own, which cost the popup
+            36px of height before the icon had even started. */}
+        <button
+          aria-label="Close reminder"
+          className="absolute right-2.5 top-2.5 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          onClick={() => dismissPopup(popup)}
+          type="button"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2 pt-6">
+          <div className="flex flex-col items-center text-center">
+            <div
+              className={`flex h-14 w-14 items-center justify-center rounded-full ${
+                popup.kind === "completed"
+                  ? "bg-emerald-100 text-emerald-600"
+                  : popup.kind === "morning-pending"
+                    ? "bg-[#eef2ff] text-[#4f5ef7]"
+                    : popup.kind === "follow-up"
+                      ? "bg-violet-100 text-violet-600"
+                    : "bg-amber-100 text-amber-600"
+              }`}
+            >
+              {popup.kind === "completed" ? (
+                <CheckCircle2 className="h-7 w-7" />
+              ) : (
+                <BellRing className={`h-7 w-7 ${popup.kind === "morning-pending" ? "animate-pulse" : ""}`} />
+              )}
+            </div>
+            <h3
+              className={`mt-3 text-[1.2rem] font-bold leading-tight ${
+                popup.kind === "completed"
+                  ? "text-emerald-700"
+                  : popup.kind === "morning-pending"
+                    ? "text-[#3148d8]"
+                    : popup.kind === "follow-up"
+                      ? "text-violet-700"
+                    : "text-amber-700"
+              }`}
+            >
+              {popup.kind === "completed"
+                ? "Great! Task Completed"
                 : popup.kind === "morning-pending"
-                  ? "bg-[#eef2ff] text-[#4f5ef7]"
+                  ? "Good Morning Reminder"
                   : popup.kind === "follow-up"
-                    ? "bg-violet-100 text-violet-600"
-                  : "bg-amber-100 text-amber-600"
-            }`}
-          >
-            {popup.kind === "completed" ? (
-              <CheckCircle2 className="h-10 w-10" />
-            ) : (
-              <BellRing className={`h-10 w-10 ${popup.kind === "morning-pending" ? "animate-pulse" : ""}`} />
-            )}
-          </div>
-          <h3
-            className={`mt-5 text-[1.75rem] font-bold ${
-              popup.kind === "completed"
-                ? "text-emerald-700"
-                : popup.kind === "morning-pending"
-                  ? "text-[#3148d8]"
-                  : popup.kind === "follow-up"
-                    ? "text-violet-700"
-                  : "text-amber-700"
-            }`}
-          >
-            {popup.kind === "completed"
-              ? "Great! Task Completed"
-              : popup.kind === "morning-pending"
-                ? "Good Morning Reminder"
-                : popup.kind === "follow-up"
-                  ? "Follow-up Reminder"
-                : "Task Pending Reminder"}
-          </h3>
-          {popup.kind === "morning-pending" ? (
-            <>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                These pending tasks need your attention today. Keep them in mind before you start the day.
-              </p>
-              <div className="mt-5 w-full rounded-[22px] border border-[#dbe4ff] bg-[#f7f9ff] p-4 text-left">
-                <div className="space-y-2">
-                  {(popup.tasks ?? []).map((task, index) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center justify-between gap-3 rounded-2xl bg-white/90 px-3 py-2 shadow-[0_8px_20px_rgba(79,94,247,0.08)]"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-800">
+                    ? "Follow-up Reminder"
+                    : "Task Pending Reminder"}
+            </h3>
+            {popup.kind === "morning-pending" ? (
+              <>
+                <p className="mt-2 text-[0.8rem] leading-5 text-slate-600">
+                  These tasks are still open on today&apos;s plan. Keep them in mind before you start the day.
+                </p>
+                <div className="mt-3 w-full rounded-[18px] border border-[#dbe4ff] bg-[#f7f9ff] p-2.5 text-left">
+                  <div className="space-y-1.5">
+                    {(popup.tasks ?? []).map((task, index) => (
+                      <div
+                        key={task.id}
+                        className="flex items-center justify-between gap-2 rounded-xl bg-white/90 px-2.5 py-1.5 shadow-[0_6px_16px_rgba(79,94,247,0.08)]"
+                      >
+                        <p className="min-w-0 flex-1 truncate text-[0.8rem] font-semibold text-slate-800" title={task.title}>
                           {index + 1}. {task.title}
                         </p>
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[0.5625rem] font-bold uppercase tracking-[0.12em] text-amber-700">
+                          {getTaskStatusLabel(task.status)}
+                        </span>
                       </div>
-                      <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">
-                        {task.status === "in_progress" ? "Running" : "Pending"}
-                      </span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <p className="mt-4 text-base font-semibold text-slate-700">You have {popup.tasks.length} task{popup.tasks.length > 1 ? "s" : ""} to remember today.</p>
-            </>
-          ) : popup.kind === "follow-up" ? (
-            <>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                <span className="font-semibold">{popup.task.title}</span> is scheduled for follow-up now.
-              </p>
-              {popup.reminderNote ? (
-                <p className="mt-4 rounded-2xl border border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-800">
-                  {popup.reminderNote}
+                <p className="mt-3 text-[0.85rem] font-semibold text-slate-700">
+                  You have {popup.tasks.length} task{popup.tasks.length > 1 ? "s" : ""} to remember today.
                 </p>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                <span className="font-semibold">{popup.task.title}</span>
-                {popup.kind === "completed"
-                  ? " has been marked as completed."
-                  : " is still pending. Please review it before the day closes."}
-              </p>
-              <p className="mt-4 text-base font-semibold text-slate-700">
-                {popup.kind === "completed"
-                  ? `Time Spent: ${Math.max(1, popup.task.trackedMinutes)}m`
-                  : `Remaining attention needed today`}
-              </p>
-            </>
-          )}
+              </>
+            ) : popup.kind === "follow-up" ? (
+              <>
+                <p className="mt-2 text-[0.8rem] leading-5 text-slate-600">
+                  <span className="font-semibold">{popup.task.title}</span> is scheduled for follow-up now.
+                </p>
+                {popup.reminderNote ? (
+                  <p className="mt-3 rounded-2xl border border-violet-100 bg-violet-50 px-3 py-2 text-[0.8rem] text-violet-800">
+                    {popup.reminderNote}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-[0.8rem] leading-5 text-slate-600">
+                  <span className="font-semibold">{popup.task.title}</span>
+                  {popup.kind === "completed"
+                    ? " has been marked as completed."
+                    : " is still pending. Please review it before the day closes."}
+                </p>
+                <p className="mt-3 text-[0.85rem] font-semibold text-slate-700">
+                  {popup.kind === "completed"
+                    ? `Time Spent: ${Math.max(1, popup.task.trackedMinutes)}m`
+                    : "Remaining attention needed today"}
+                </p>
+              </>
+            )}
+          </div>
         </div>
-        <div className="mt-6 space-y-3">
+
+        <div className="shrink-0 space-y-2 px-5 pb-5 pt-3">
           <Link
-            className={`button-force-white flex h-12 w-full items-center justify-center rounded-2xl text-sm font-semibold ${
+            className={`button-force-white flex h-11 w-full items-center justify-center rounded-2xl text-[0.85rem] font-semibold ${
               popup.kind === "completed"
                 ? "bg-[#315fe6] hover:bg-[#274fc0]"
                 : popup.kind === "morning-pending"
@@ -284,19 +314,31 @@ export function DashboardTaskNotifier({ tasks = [] }: { tasks: NotifierTask[] })
                     ? "bg-violet-600 hover:bg-violet-700"
                   : "bg-amber-500 hover:bg-amber-600"
             }`}
-            href={popup.kind === "morning-pending" ? "/dashboard" : "/dashboard"}
+            href="/dashboard"
             onClick={() => {
               dismissPopup(popup);
             }}
           >
-            {popup.kind === "completed" ? "View Task" : popup.kind === "morning-pending" ? "Keep It In Mind" : popup.kind === "follow-up" ? "Open Task" : "Go to Task"}
+            {popup.kind === "completed"
+              ? "View Task"
+              : popup.kind === "morning-pending"
+                ? "Keep It In Mind"
+                : popup.kind === "follow-up"
+                  ? "Open Task"
+                  : "Go to Task"}
           </Link>
           <button
-            className="w-full text-center text-sm font-semibold text-slate-500 transition hover:text-slate-700"
+            className="w-full text-center text-[0.8rem] font-semibold text-slate-500 transition hover:text-slate-700"
             onClick={() => dismissPopup(popup)}
             type="button"
           >
-            {popup.kind === "completed" ? "Close" : popup.kind === "morning-pending" ? "Close Reminder" : popup.kind === "follow-up" ? "Dismiss" : "Snooze 15 min"}
+            {popup.kind === "completed"
+              ? "Close"
+              : popup.kind === "morning-pending"
+                ? "Close Reminder"
+                : popup.kind === "follow-up"
+                  ? "Dismiss"
+                  : "Snooze 15 min"}
           </button>
         </div>
       </div>

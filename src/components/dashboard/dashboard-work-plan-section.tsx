@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { ListChecks } from "lucide-react";
+import { CheckCircle2, ListChecks, RotateCcw, Timer } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AssignmentReviewControls } from "@/components/dashboard/assignment-review-controls";
 import { PanelHeader } from "@/components/dashboard/panel-header";
 import { DashboardTaskTimerAction, type TaskTimerSnapshot } from "@/components/dashboard/dashboard-task-timer-action";
 import { TaskAutoStopNoteModal } from "@/components/dashboard/task-auto-stop-note-modal";
 import { TaskCompleteModal, type TaskCompletionPayload } from "@/components/dashboard/task-complete-modal";
+import { TaskDetailsModal, type TaskDetails } from "@/components/dashboard/task-details-modal";
 import { TaskManageControls } from "@/components/dashboard/task-manage-controls";
 import {
   DASHBOARD_TASKS_CREATED_EVENT,
@@ -21,11 +22,20 @@ import {
   TASK_AUTO_STOP_NOTE_EVENT,
   type TaskAutoStopNotePayload,
 } from "@/lib/task-auto-stop-note";
-import { countDashboardTaskStats, filterTodaysWorkPlanTasks } from "@/lib/dashboard-work-plan-filter";
-import { extractContinuationMeta } from "@/lib/task-continuation";
+import {
+  countDashboardTaskStats,
+  filterTodaysWorkPlanTasks,
+  getTaskStatusForDashboard,
+  getTaskStatusLabel,
+  isCarriedOverTask,
+  sortTasksByRecency,
+} from "@/lib/dashboard-work-plan-filter";
+import { buildContinuationOverview, extractContinuationMeta } from "@/lib/task-continuation";
 import { extractFollowUpMeta } from "@/lib/task-follow-up";
 import { getReadableTaskDescription } from "@/lib/report-summary";
-import { toDateOnly } from "@/lib/utils";
+import { formatTaskPriority, normalizeTaskPriority } from "@/lib/task-priority";
+import { embedReopenMeta, isReopenedTask, stripReopenMeta } from "@/lib/task-reopen";
+import { formatTimeOnlyInDhaka, toDateOnly } from "@/lib/utils";
 
 export type DashboardWorkPlanTask = {
   id: string;
@@ -36,6 +46,8 @@ export type DashboardWorkPlanTask = {
   assignedBy?: string | null;
   userId: string;
   departmentName: string;
+  /** Ordering falls back to this for a task that has not been worked on yet. */
+  createdAt?: string | null;
   updates: Array<{
     status: "done" | "in_progress" | "pending";
     note?: string | null;
@@ -43,6 +55,7 @@ export type DashboardWorkPlanTask = {
     actualStart?: string | null;
     actualEnd?: string | null;
     reportDate?: string | null;
+    updatedAt?: string | null;
   }>;
   latestReview?: {
     id: string;
@@ -72,99 +85,59 @@ type DashboardWorkPlanSectionProps = {
   }) => void;
 };
 
-function getPriorityTone(priority: string) {
-  if (priority === "high" || priority === "critical") {
-    return "border border-rose-200 bg-gradient-to-r from-rose-500 via-pink-500 to-red-500 text-white shadow-[0_6px_14px_rgba(244,63,94,0.2)]";
-  }
+/**
+ * Uppercase micro-chip: priority, and the markers that say where a task came
+ * from. The hue rides a data-chip attribute, so the class list is shared.
+ */
+const MARKER_CHIP_CLASS =
+  "task-chip inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.5rem] font-bold uppercase tracking-[0.1em]";
 
-  if (priority === "normal") {
-    return "border border-amber-200 bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-500 text-slate-950 shadow-[0_6px_14px_rgba(245,158,11,0.18)]";
-  }
+/** A size up and in sentence case: status and department read as words, not tags. */
+const STATUS_CHIP_CLASS = "task-chip inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.5625rem] font-semibold";
 
-  return "border border-emerald-200 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-500 text-white shadow-[0_6px_14px_rgba(16,185,129,0.18)]";
+function formatTrackedMinutes(totalMinutes: number) {
+  const safeMinutes = Math.max(0, Math.round(totalMinutes));
+  return `${Math.floor(safeMinutes / 60)}h ${String(safeMinutes % 60).padStart(2, "0")}m`;
 }
 
-function formatPriority(priority: string) {
-  if (priority === "critical") return "High";
-  if (priority === "normal") return "Medium";
-  return priority.charAt(0).toUpperCase() + priority.slice(1);
-}
-
-function priorityRank(priority: string) {
-  if (priority === "critical") return 0;
-  if (priority === "high") return 1;
-  if (priority === "normal") return 2;
-  return 3;
-}
-
-function getStatusMeta(status: "done" | "in_progress" | "pending") {
+/**
+ * isLive is the timer actually counting right now, which is not the same thing
+ * as the stored in_progress status a task paused over lunch is still in
+ * progress. Only the running one reads "Live"; the dot is drawn for both and
+ * only pulses on the live card.
+ */
+function getStatusMeta(status: "done" | "in_progress" | "pending", isLive = false) {
   if (status === "done") {
-    return { label: "Completed", chip: "border border-emerald-200 bg-emerald-50 text-emerald-700" };
+    return { label: "Completed", tone: "done" as const };
   }
 
   if (status === "in_progress") {
-    return { label: "In Progress", chip: "border border-blue-200 bg-blue-50 text-blue-700" };
+    return { label: isLive ? "Live" : "Active", tone: "active" as const };
   }
 
-  return { label: "Pending", chip: "border border-amber-200 bg-amber-50 text-amber-700" };
+  return { label: "Pending", tone: "pending" as const };
 }
 
-function getTaskSurfaceTone({
-  priority,
-  status,
-  hasFollowUp,
-  hasContinuation,
-}: {
-  priority: string;
-  status: "done" | "in_progress" | "pending";
-  hasFollowUp: boolean;
-  hasContinuation: boolean;
-}) {
-  if (hasFollowUp) {
-    return {
-      article:
-        "border-violet-300 bg-[linear-gradient(135deg,#f5eefe_0%,#ecdfff_52%,#f8f2ff_100%)] hover:border-violet-400 hover:bg-[linear-gradient(135deg,#f1e7ff_0%,#e7d7ff_52%,#f5edff_100%)] hover:shadow-[0_14px_30px_rgba(139,92,246,0.18)]",
-      note: "border border-violet-200/90 bg-[linear-gradient(135deg,#efe3ff_0%,#e6d7ff_100%)]",
-    };
+type TaskAccentTone = "critical" | "high" | "normal" | "low" | "done";
+
+/**
+ * Which accent the card's border (and, while the timer is running, its
+ * pulsing ring) carries.
+ *
+ * Provenance — reopened, follow-up, continued, carried over — already has its
+ * own badge on the card, so the border doesn't need to repeat it; encoding
+ * both there and here is what made a reopened Critical task show a pink
+ * border for a red problem. The border now answers one question only, the
+ * one it's actually useful for at a glance: how urgent is this. Done is the
+ * one status that still overrides priority, because a finished task isn't
+ * urgent regardless of what it was planned as.
+ */
+function getTaskAccentTone(task: DashboardWorkPlanTask, status: "done" | "in_progress" | "pending"): TaskAccentTone {
+  if (status === "done") {
+    return "done";
   }
 
-  if (hasContinuation) {
-    return {
-      article:
-        "border-sky-300 bg-[linear-gradient(135deg,#eaf7ff_0%,#dff1ff_52%,#f1f9ff_100%)] hover:border-sky-400 hover:bg-[linear-gradient(135deg,#e2f3ff_0%,#d6edff_52%,#ebf7ff_100%)] hover:shadow-[0_14px_30px_rgba(56,189,248,0.18)]",
-      note: "border border-sky-200/90 bg-[linear-gradient(135deg,#dff1ff_0%,#d3ebff_100%)]",
-    };
-  }
-
-  if (priority === "critical" || priority === "high") {
-    return {
-      article:
-        "border-rose-300 bg-[linear-gradient(135deg,#fff0f1_0%,#ffe3e8_48%,#fff2e8_100%)] hover:border-rose-400 hover:bg-[linear-gradient(135deg,#ffe9ec_0%,#ffd8e1_48%,#ffecdf_100%)] hover:shadow-[0_14px_30px_rgba(244,114,182,0.18)]",
-      note: "border border-rose-200/90 bg-[linear-gradient(135deg,#ffe3e7_0%,#ffd7df_100%)]",
-    };
-  }
-
-  if (status === "in_progress") {
-    return {
-      article:
-        "border-blue-300 bg-[linear-gradient(135deg,#edf4ff_0%,#e1ebff_54%,#f3f7ff_100%)] hover:border-blue-400 hover:bg-[linear-gradient(135deg,#e5efff_0%,#d8e5ff_54%,#edf4ff_100%)] hover:shadow-[0_14px_30px_rgba(96,165,250,0.18)]",
-      note: "border border-blue-200/90 bg-[linear-gradient(135deg,#dfebff_0%,#d3e2ff_100%)]",
-    };
-  }
-
-  if (priority === "normal" || status === "pending") {
-    return {
-      article:
-        "border-amber-300 bg-[linear-gradient(135deg,#fff6e6_0%,#ffefcf_52%,#fff7ea_100%)] hover:border-amber-400 hover:bg-[linear-gradient(135deg,#fff1da_0%,#ffe8bf_52%,#fff2df_100%)] hover:shadow-[0_14px_30px_rgba(245,158,11,0.18)]",
-      note: "border border-amber-200/90 bg-[linear-gradient(135deg,#ffeecf_0%,#ffe5bc_100%)]",
-    };
-  }
-
-  return {
-    article:
-      "border-emerald-300 bg-[linear-gradient(135deg,#ebfff4_0%,#dcf9e9_52%,#f2fff8_100%)] hover:border-emerald-400 hover:bg-[linear-gradient(135deg,#e3fcea_0%,#d2f4e0_52%,#ebfdf3_100%)] hover:shadow-[0_14px_30px_rgba(52,211,153,0.17)]",
-    note: "border border-emerald-200/90 bg-[linear-gradient(135deg,#daf8e6_0%,#cef1dc_100%)]",
-  };
+  return normalizeTaskPriority(task.priority);
 }
 
 function parseResponse(raw: string) {
@@ -255,6 +228,163 @@ function emitDashboardStats(
   }
 }
 
+/**
+ * Swallows clicks and key presses so the controls inside it never also open the
+ * card's details dialog. Without this, Start, Edit, Delete and even a space bar
+ * pressed inside a time field would open it.
+ */
+function CardActionArea({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={className} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      {children}
+    </div>
+  );
+}
+
+/** Shared with DashboardKpiCards, so a task opened from a KPI card's list matches the one opened from its own column. */
+export function buildTaskDetails(task: DashboardWorkPlanTask, currentUserId: string): TaskDetails {
+  const status = getTaskStatusForDashboard(task) as "done" | "in_progress" | "pending";
+  const update = task.updates[0];
+
+  return {
+    id: task.id,
+    taskTitle: task.taskTitle,
+    description: getReadableTaskDescription(task.taskDescription),
+    priority: task.priority,
+    status,
+    statusLabel: getTaskStatusLabel(status),
+    departmentName: task.departmentName,
+    planDate: task.planDate,
+    trackedMinutes: update?.trackedMinutes ?? 0,
+    actualStart: update?.actualStart ?? null,
+    actualEnd: update?.actualEnd ?? null,
+    note: update?.note ?? null,
+    isFollowUp: Boolean(extractFollowUpMeta(task.taskDescription)),
+    isContinued: Boolean(extractContinuationMeta(task.taskDescription)),
+    isReopened: isReopenedTask(task.taskDescription),
+    isCarriedOver: isCarriedOverTask(task),
+    isAssigned: Boolean(task.assignedBy) && task.userId === currentUserId,
+    continuation: buildContinuationOverview({
+      taskDescription: task.taskDescription,
+      currentDate: task.planDate,
+      currentProgress: status === "done" ? 100 : 0,
+      currentTrackedMinutes: update?.trackedMinutes ?? 0,
+      currentNote: update?.note,
+    }),
+  };
+}
+
+/**
+ * The shared shell for both halves of the work plan: one-line title with the
+ * badges flush right, one-line note, then whatever actions the half provides.
+ *
+ * The whole card opens the details dialog. It holds buttons and time inputs so
+ * it cannot be a <button> itself; role and tabIndex give it the same affordance
+ * and CardActionArea keeps the controls from triggering it.
+ */
+function WorkPlanTaskCard({
+  children,
+  className,
+  isLive = false,
+  onOpenDetails,
+  status,
+  task,
+  tone,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** The task's timer is counting right now, which is what the pulse means. */
+  isLive?: boolean;
+  onOpenDetails: () => void;
+  status: "done" | "in_progress" | "pending";
+  task: DashboardWorkPlanTask;
+  tone: TaskAccentTone;
+}) {
+  const statusMeta = getStatusMeta(status, isLive);
+  const followUpMeta = extractFollowUpMeta(task.taskDescription);
+  const continuationMeta = extractContinuationMeta(task.taskDescription);
+  const reopened = isReopenedTask(task.taskDescription);
+  // Still open past its own day, so it followed the user into today's plan
+  // instead of silently disappearing — see isVisibleInTodaysWorkPlan.
+  const carriedOver = isCarriedOverTask(task);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    onOpenDetails();
+  }
+
+  return (
+    <article
+      className={`task-card group cursor-pointer overflow-hidden rounded-[0.875rem] p-2.5 pl-3 transition ${className || ""}`}
+      data-dashboard-row
+      data-live={isLive ? "true" : undefined}
+      data-tone={tone}
+      onClick={onOpenDetails}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      title="Open task details"
+    >
+      <div className="flex flex-col gap-1.5">
+        {/* Title and badges share one row, badges flush right. The title takes
+            the slack and truncates; the full string is a click away. */}
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-[0.85rem] font-semibold leading-5 text-[var(--foreground)]">
+            {task.taskTitle}
+          </h3>
+          <div className="flex shrink-0 items-center gap-1">
+            {/* The only badge about where the task came from rather than what it
+                is: this one was finished and pulled back out of Complete Task. */}
+            {reopened ? (
+              <span
+                className={MARKER_CHIP_CLASS + " gap-0.5"}
+                data-chip="reopened"
+                title="Brought back from Complete Task"
+              >
+                <RotateCcw className="h-2 w-2" />
+                Reopened
+              </span>
+            ) : null}
+            {carriedOver ? (
+              <span className={MARKER_CHIP_CLASS} data-chip="pending" title={`Still open from ${task.planDate}`}>
+                Carried Over
+              </span>
+            ) : null}
+            {followUpMeta ? (
+              <span className={MARKER_CHIP_CLASS} data-chip="followup">
+                Follow-up
+              </span>
+            ) : null}
+            {continuationMeta ? (
+              <span className={MARKER_CHIP_CLASS} data-chip="continued">
+                Cont.
+              </span>
+            ) : null}
+            <span className={MARKER_CHIP_CLASS} data-chip={normalizeTaskPriority(task.priority)}>
+              {formatTaskPriority(task.priority)}
+            </span>
+            <span className={STATUS_CHIP_CLASS + " gap-1"} data-chip={statusMeta.tone}>
+              {/* Gated on isLive, not just the in_progress status: a task that is
+                  in progress but paused is not what "live" promises. */}
+              {isLive ? <span className="task-live-dot" /> : null}
+              {statusMeta.label}
+            </span>
+            <span className={STATUS_CHIP_CLASS + " max-w-[5.5rem]"} title={task.departmentName}>
+              <span className="truncate">{task.departmentName}</span>
+            </span>
+          </div>
+        </div>
+
+        {children}
+      </div>
+    </article>
+  );
+}
+
 export function DashboardWorkPlanSection({
   tasks: initialTasks,
   canEdit,
@@ -266,12 +396,18 @@ export function DashboardWorkPlanSection({
   const router = useRouter();
   const [tasks, setTasks] = useState(initialTasks);
   const [completeTaskId, setCompleteTaskId] = useState<string | null>(null);
+  const [detailsTask, setDetailsTask] = useState<TaskDetails | null>(null);
   const [savingCompletion, setSavingCompletion] = useState(false);
   const [autoStopQueue, setAutoStopQueue] = useState<TaskAutoStopNotePayload[]>(() =>
     typeof window === "undefined" ? [] : readPendingTaskAutoStopNotes(),
   );
   const [savingAutoStopNote, setSavingAutoStopNote] = useState(false);
   const timerSnapshotsRef = useRef<Record<string, TaskTimerSnapshot>>({});
+  // Snapshots live in a ref because most readers (save handlers) just need the
+  // latest value at click time. The live dot is the one reader that has to
+  // re-render when a timer starts or stops, so it gets this tiny state mirror
+  // instead of the whole snapshot map re-rendering the list on every tick.
+  const [liveTaskIds, setLiveTaskIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const syncHandle = window.setTimeout(() => {
@@ -340,6 +476,9 @@ export function DashboardWorkPlanSection({
       ...timerSnapshotsRef.current,
       [taskId]: snapshot,
     };
+
+    const isRunning = Boolean(snapshot.runningStartedAt);
+    setLiveTaskIds((current) => (Boolean(current[taskId]) === isRunning ? current : { ...current, [taskId]: isRunning }));
   }, []);
 
   const handleDoneClick = useCallback((taskId: string) => {
@@ -352,16 +491,20 @@ export function DashboardWorkPlanSection({
     }
   }, []);
 
-  const visibleTasks = useMemo(
-    () =>
-      filterTodaysWorkPlanTasks(tasks)
-        .sort(
-          (left, right) =>
-            priorityRank(left.priority) - priorityRank(right.priority) ||
-            left.taskTitle.localeCompare(right.taskTitle),
-        )
-        .slice(0, 6),
-    [tasks],
+  // Recency, not priority: which task moved most recently is what the two
+  // columns are meant to answer, and priority still shows on the card itself.
+  const visibleTasks = useMemo(() => sortTasksByRecency(filterTodaysWorkPlanTasks(tasks)), [tasks]);
+
+  // No slice on either half any more: each panel is its own scroller, so a long
+  // day scrolls instead of silently dropping tasks off the end of the list.
+  const openTasks = useMemo(
+    () => visibleTasks.filter((task) => getTaskStatusForDashboard(task) !== "done"),
+    [visibleTasks],
+  );
+
+  const doneTasks = useMemo(
+    () => visibleTasks.filter((task) => getTaskStatusForDashboard(task) === "done"),
+    [visibleTasks],
   );
 
   const completingTask = tasks.find((task) => task.id === completeTaskId) ?? null;
@@ -379,6 +522,11 @@ export function DashboardWorkPlanSection({
 
         return {
           ...task,
+          // Finishing ends the reopened state, mirroring the server's own
+          // stripReopenMeta call for the same complete_task action.
+          taskDescription: isReopenedTask(task.taskDescription)
+            ? stripReopenMeta(task.taskDescription) || null
+            : task.taskDescription,
           updates: [
             {
               ...(task.updates[0] ?? {
@@ -421,6 +569,46 @@ export function DashboardWorkPlanSection({
               }),
               status: "done" as const,
               reportDate: toDateOnly(),
+            },
+          ],
+        };
+      }),
+    );
+  }, []);
+
+  /**
+   * Mirrors the server's own resumedStatus rule (in the restore_to_dashboard
+   * action): a task with tracked time or a start already logged resumes as
+   * in_progress, a fresh one goes back to pending. Keeping this in sync means
+   * the card flips columns immediately instead of waiting on router.refresh().
+   */
+  const handleRestoredToWorkPlan = useCallback((taskId: string) => {
+    setTasks((current) =>
+      current.map((task) => {
+        if (task.id !== taskId) {
+          return task;
+        }
+
+        const latestUpdate = task.updates[0];
+        const resumedStatus: "in_progress" | "pending" =
+          latestUpdate && (latestUpdate.trackedMinutes > 0 || latestUpdate.actualStart) ? "in_progress" : "pending";
+
+        return {
+          ...task,
+          // Matches the server's own embedReopenMeta call in the same action, so
+          // the "Reopened" chip shows immediately instead of after router.refresh().
+          taskDescription: embedReopenMeta(task.taskDescription),
+          updates: [
+            {
+              ...(latestUpdate ?? {
+                trackedMinutes: 0,
+                actualStart: null,
+                actualEnd: null,
+                note: null,
+                reportDate: toDateOnly(),
+              }),
+              status: resumedStatus,
+              actualEnd: null,
             },
           ],
         };
@@ -571,141 +759,189 @@ export function DashboardWorkPlanSection({
     dismissAutoStopPrompt(activeAutoStopPrompt.taskId, activeAutoStopPrompt.reportDate);
   }
 
+  function renderOpenTask(task: DashboardWorkPlanTask) {
+    const status = getTaskStatusForDashboard(task) as "done" | "in_progress" | "pending";
+    const tone = getTaskAccentTone(task, status);
+
+    return (
+      <WorkPlanTaskCard
+        isLive={status === "in_progress" && Boolean(liveTaskIds[task.id])}
+        key={task.id}
+        onOpenDetails={() => setDetailsTask(buildTaskDetails(task, currentUserId))}
+        status={status}
+        task={task}
+        tone={tone}
+      >
+        <CardActionArea className="w-full min-w-0">
+          <TaskTimerActionWrapper
+            task={task}
+            canEdit={canEdit}
+            attendanceRunning={attendanceRunning}
+            afterDoneSlot={
+              <TaskManageControls
+                compact
+                hideDoneAction
+                showInlineDelete
+                onMovedToHistory={handleMovedToHistory}
+                task={{
+                  id: task.id,
+                  taskTitle: task.taskTitle,
+                  taskDescription: task.taskDescription,
+                  priority: task.priority as "low" | "normal" | "high" | "critical",
+                }}
+              />
+            }
+            onDoneClick={handleDoneClick}
+            onSnapshotChange={handleSnapshotChange}
+          />
+          {task.assignedBy && task.userId === currentUserId ? (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <AssignmentReviewControls
+                latestReview={task.latestReview ?? null}
+                mode="assignee"
+                taskId={task.id}
+                taskTitle={task.taskTitle}
+              />
+            </div>
+          ) : null}
+        </CardActionArea>
+      </WorkPlanTaskCard>
+    );
+  }
+
+  function renderDoneTask(task: DashboardWorkPlanTask) {
+    const update = task.updates[0];
+    const startLabel = update?.actualStart ? formatTimeOnlyInDhaka(update.actualStart) : "--:--";
+    const endLabel = update?.actualEnd ? formatTimeOnlyInDhaka(update.actualEnd) : "--:--";
+
+    return (
+      // Read-only on purpose: a finished task needs its numbers and its manage
+      // actions, not a Start button that would reopen the timer by accident.
+      <WorkPlanTaskCard
+        key={task.id}
+        onOpenDetails={() => setDetailsTask(buildTaskDetails(task, currentUserId))}
+        status="done"
+        task={task}
+        tone="done"
+        className="border-slate-100"
+      >
+        {/* Only the controls swallow the click here: the two chips are plain text
+            and the card stays openable from anywhere around them. */}
+        <div className="flex min-w-0 items-center gap-1">
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-1.5 py-1 text-[0.5rem] font-semibold tabular-nums text-slate-600 bg-white">
+            <Timer className="h-3 w-3 text-[#4f5ef7]" />
+            {formatTrackedMinutes(update?.trackedMinutes ?? 0)}
+          </span>
+          <span
+            className="inline-flex shrink-0 items-center rounded-md border border-slate-200 px-1.5 py-1 text-[0.5rem] font-semibold tabular-nums text-slate-600 bg-white"
+            title="Started and finished"
+          >
+            {startLabel} - {endLabel}
+          </span>
+          <CardActionArea className="ml-auto shrink-0">
+            <TaskManageControls
+              compact
+              hideDoneAction
+              showArchiveAction
+              showInlineDelete
+              showRestoreAction
+              onMovedToHistory={handleMovedToHistory}
+              onRestoredToWorkPlan={handleRestoredToWorkPlan}
+              task={{
+                id: task.id,
+                taskTitle: task.taskTitle,
+                taskDescription: task.taskDescription,
+                priority: task.priority as "low" | "normal" | "high" | "critical",
+              }}
+            />
+          </CardActionArea>
+        </div>
+      </WorkPlanTaskCard>
+    );
+  }
+
   return (
     <>
-      <div
-        // Height is pinned to exactly one task card so a half-cut card never
-        // shows; the rest scroll, snapping to each card's top edge.
-        className="dashboard-accent accent-indigo flex min-h-0 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] min-[900px]:h-[16.35rem]"
-        data-dashboard-panel
-      >
-        <div className="shrink-0 border-b border-[var(--panel-border)] px-2.5 py-1.5">
-          <PanelHeader
-            action={<p className="text-[0.6875rem] font-medium text-[var(--muted-foreground)] sm:text-xs">{formattedDate}</p>}
-            icon={ListChecks}
-            title="Today's Work Plan"
-          />
+      {/* One day, two halves: what is still open on the left, what is already
+          finished on the right. Each half owns the column height and scrolls
+          inside itself, so the page still ends at the bottom of one screen. */}
+      <div className="grid min-h-0 min-w-0 gap-2 min-[900px]:flex-1 min-[900px]:grid-cols-2">
+        <div
+          className="dashboard-accent accent-indigo flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)]"
+          data-dashboard-panel
+        >
+          {/* The date is the first thing to drop: between 900px and 1150px the
+              split leaves this header too narrow to hold it and the title. */}
+          <div className="shrink-0 border-b border-[var(--panel-border)] px-2.5 py-1.5">
+            <PanelHeader
+              action={
+                <p className="truncate text-[0.6875rem] font-medium text-[var(--muted-foreground)] min-[900px]:max-[1150px]:hidden sm:text-xs">
+                  {formattedDate}
+                </p>
+              }
+              icon={ListChecks}
+              title="Today's Work Plan"
+            />
+          </div>
+
+          <div className="dashboard-scroll-area min-h-0 flex-1 space-y-1.5 p-2">
+            {openTasks.length ? (
+              openTasks.map((task) => renderOpenTask(task))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-6 text-center text-[0.85rem] text-[var(--muted-foreground)]">
+                {visibleTasks.length
+                  ? "Everything planned for today is finished."
+                  : "No tasks added yet for today. Start by creating today's work plan."}
+              </div>
+            )}
+          </div>
+
+          <div className="shrink-0 border-t border-[var(--panel-border)] px-3 py-1 text-center">
+            <Link className="text-xs font-semibold text-[#4f5ef7] hover:text-[#3f4ede]" href="/dashboard/plan">
+              View All Tasks
+            </Link>
+          </div>
         </div>
 
-        <div className="dashboard-scroll-area min-h-0 flex-1 space-y-1.5 p-2 min-[900px]:snap-y min-[900px]:snap-mandatory">
-          {visibleTasks.length ? (
-            visibleTasks.map((task) => {
-              const status = task.updates[0]?.status ?? "pending";
-              const statusMeta = getStatusMeta(status);
-              const continuationMeta = extractContinuationMeta(task.taskDescription);
-              const followUpMeta = extractFollowUpMeta(task.taskDescription);
-              const taskDescription = getReadableTaskDescription(task.taskDescription);
-              const surfaceTone = getTaskSurfaceTone({
-                priority: task.priority,
-                status,
-                hasFollowUp: Boolean(followUpMeta),
-                hasContinuation: Boolean(continuationMeta),
-              });
+        <div
+          className="dashboard-accent accent-emerald flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)]"
+          data-dashboard-panel
+        >
+          <div className="shrink-0 border-b border-[var(--panel-border)] px-2.5 py-1.5">
+            <PanelHeader
+              action={
+                <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-[0.1em] tabular-nums text-emerald-600">
+                  {doneTasks.length} done
+                </span>
+              }
+              icon={CheckCircle2}
+              title="Complete Task"
+              tone="bg-emerald-500/10 text-emerald-500"
+            />
+          </div>
 
-              return (
-                <article
-                  className={`group overflow-hidden rounded-[1rem] border p-2.5 transition min-[900px]:h-[11rem] min-[900px]:snap-start ${surfaceTone.article}`}
-                  data-dashboard-row
-                  key={task.id}
-                >
-                  <div className="flex flex-col gap-2.5 sm:gap-3">
-                    <div className="flex min-w-0 flex-col gap-3 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(18.75rem,24rem)] xl:items-start xl:gap-4">
-                      <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="break-words text-[0.92rem] font-semibold leading-5 text-[var(--foreground)] sm:text-sm sm:leading-6">{task.taskTitle}</h3>
-                          {followUpMeta ? (
-                            <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-[0.14em] text-violet-700">
-                              Follow-up
-                            </span>
-                          ) : null}
-                          {continuationMeta ? (
-                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-[0.14em] text-sky-700">
-                              Continued
-                            </span>
-                          ) : null}
-                        </div>
-                        {/* Department rides in the chip row rather than sitting on
-                            a line of its own: it is the same kind of fact as
-                            priority and status, and giving it its own row cost a
-                            line of height on every card. */}
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={`inline-flex min-w-[4.5rem] items-center justify-center rounded-full px-2 py-1 text-[0.5625rem] font-bold uppercase tracking-[0.12em] ${getPriorityTone(task.priority)}`}
-                          >
-                            {formatPriority(task.priority)}
-                          </span>
-                          <span className={`inline-flex rounded-full px-2 py-1 text-[0.625rem] font-semibold ${statusMeta.chip}`}>
-                            {statusMeta.label}
-                          </span>
-                          <span
-                            className="inline-flex max-w-[11rem] items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[0.625rem] font-semibold text-slate-700"
-                            title={task.departmentName}
-                          >
-                            <span className="truncate">{task.departmentName}</span>
-                          </span>
-                        </div>
-                      </div>
+          <div className="dashboard-scroll-area min-h-0 flex-1 space-y-1.5 p-2">
+            {doneTasks.length ? (
+              doneTasks.map((task) => renderDoneTask(task))
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-6 text-center">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <p className="text-[0.85rem] text-[var(--muted-foreground)]">Nothing finished yet. Completed tasks land here.</p>
+              </div>
+            )}
+          </div>
 
-                      <div className="w-full max-w-full xl:max-w-[24rem] xl:justify-self-end">
-                        <TaskTimerActionWrapper
-                          task={task}
-                          canEdit={canEdit}
-                          attendanceRunning={attendanceRunning}
-                          afterDoneSlot={
-                            <TaskManageControls
-                              compact
-                              hideDoneAction
-                              showArchiveAction
-                              showInlineDelete
-                              onMovedToHistory={handleMovedToHistory}
-                              task={{
-                                id: task.id,
-                                taskTitle: task.taskTitle,
-                                taskDescription: task.taskDescription,
-                                priority: task.priority as "low" | "normal" | "high" | "critical",
-                              }}
-                            />
-                          }
-                          onDoneClick={handleDoneClick}
-                          onSnapshotChange={handleSnapshotChange}
-                        />
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          {task.assignedBy && task.userId === currentUserId ? (
-                            <AssignmentReviewControls
-                              latestReview={task.latestReview ?? null}
-                              mode="assignee"
-                              taskId={task.id}
-                              taskTitle={task.taskTitle}
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    {taskDescription ? (
-                      <div className={`rounded-xl px-2.5 py-1.5 ${surfaceTone.note}`}>
-                        <p className="line-clamp-2 text-[0.68rem] leading-4 text-slate-600 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                          {taskDescription}
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              );
-            })
-          ) : (
-            <div className="rounded-2xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-6 text-center text-[0.92rem] text-[var(--muted-foreground)] sm:px-5 sm:py-8 sm:text-sm">
-              No tasks added yet for today. Start by creating today&apos;s work plan.
-            </div>
-          )}
-        </div>
-
-        <div className="shrink-0 border-t border-[var(--panel-border)] px-3 py-1 text-center">
-          <Link className="text-xs font-semibold text-[#4f5ef7] hover:text-[#3f4ede] sm:text-sm" href="/dashboard/plan">
-            View All Tasks
-          </Link>
+          <div className="shrink-0 border-t border-[var(--panel-border)] px-3 py-1 text-center">
+            <Link className="text-xs font-semibold text-[#4f5ef7] hover:text-[#3f4ede]" href="/dashboard/report">
+              View Full Report
+            </Link>
+          </div>
         </div>
       </div>
+
+      <TaskDetailsModal onOpenChange={(open) => (open ? undefined : setDetailsTask(null))} task={detailsTask} />
 
       <TaskCompleteModal
         onOpenChange={handleModalOpenChange}

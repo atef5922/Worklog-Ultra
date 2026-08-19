@@ -29,6 +29,15 @@ export const ATTENDANCE_STOPPED_EVENT = "dashboard:attendance-stopped";
  * checks back in rather than waiting for the server round trip to land.
  */
 export const ATTENDANCE_STARTED_EVENT = "dashboard:attendance-started";
+/**
+ * Fired once the Notices page has marked everything it just displayed as
+ * read (see notices-read:<id> in localStorage). The header bell and the
+ * sidebar's unread dot each poll on their own schedule already, but without
+ * this they would not notice a read happened until their next interval — up
+ * to 15s of the badge still showing for notices the user is looking at right
+ * now.
+ */
+export const NOTICES_READ_EVENT = "dashboard:notices-read";
 
 export function dispatchDashboardTasksCreated(tasks: DashboardLiveTask[]) {
   if (typeof window === "undefined" || !tasks.length) {

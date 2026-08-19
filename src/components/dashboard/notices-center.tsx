@@ -2,7 +2,7 @@
 
 import { BellRing, Megaphone } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { PanelHeader } from "@/components/dashboard/panel-header";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { NOTICES_READ_EVENT } from "@/lib/dashboard-live-events";
 
 type Department = {
   id: string;
@@ -40,6 +41,27 @@ export function NoticesCenter({
   const [body, setBody] = useState("");
   const [targetDepartmentId, setTargetDepartmentId] = useState("all");
   const [saving, setSaving] = useState(false);
+
+  // Landing on this page is itself "reading" every notice on it — the header
+  // bell and the sidebar dot both key off notice-read:<id> in localStorage,
+  // and neither one else ever writes it, so without this the badge would
+  // stay lit forever for anyone who reads notices here instead of through
+  // the bell dropdown.
+  useEffect(() => {
+    if (!notices.length) {
+      return;
+    }
+
+    try {
+      notices.forEach((notice) => {
+        window.localStorage.setItem(`notice-read:${notice.id}`, "read");
+      });
+    } catch {
+      // ignore storage errors
+    }
+
+    window.dispatchEvent(new Event(NOTICES_READ_EVENT));
+  }, [notices]);
 
   async function publishNotice() {
     if (!title.trim()) {

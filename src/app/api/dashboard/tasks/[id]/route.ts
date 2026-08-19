@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { embedHistoryMeta, stripHistoryMeta } from "@/lib/task-history-shared";
 import { buildContinuationDescription } from "@/lib/task-continuation";
 import { buildFollowUpDescription } from "@/lib/task-follow-up";
+import { embedReopenMeta, isReopenedTask, stripReopenMeta } from "@/lib/task-reopen";
 import { addDays } from "date-fns";
 import { parseDhakaDateTime, toDateOnly } from "@/lib/utils";
 
@@ -148,6 +149,7 @@ export async function POST(
           actualStart: true,
           actualEnd: true,
           difficultyLevel: true,
+          reportDate: true,
         },
       },
     },
@@ -167,6 +169,13 @@ export async function POST(
 
   const today = toDateOnly();
   const isTodaysTask = toDateOnly(task.planDate) === today;
+  // A task carried forward from an earlier planDate (still open, or just
+  // completed today) already has today's own dailyTaskUpdate row — same
+  // shape as a genuinely-today task from restore_to_dashboard's point of
+  // view, so it takes the simple "flip the existing row back" path too
+  // instead of the continuation-task path meant for reviving something
+  // actually archived in History.
+  const latestUpdateIsToday = Boolean(latestUpdate?.reportDate && toDateOnly(latestUpdate.reportDate) === today);
 
   if (action === "complete_task") {
     const completionStatus = body.completionStatus === "partial" ? "partial" : "done";
@@ -224,11 +233,20 @@ export async function POST(
 
     await clearAutoContinuationTask(task);
 
+    // Finishing the task ends the reopened state: the marker describes an open
+    // task that came back from the Complete column, not a permanent property.
+    if (isReopenedTask(task.taskDescription)) {
+      await db.dailyTask.update({
+        where: { id: task.id },
+        data: { taskDescription: stripReopenMeta(task.taskDescription) || null },
+      });
+    }
+
     let followUpTaskId: string | null = null;
 
     if (wantsFollowUp) {
       const continuationDescription = buildContinuationDescription({
-        originalDescription: stripHistoryMeta(task.taskDescription),
+        originalDescription: stripReopenMeta(stripHistoryMeta(task.taskDescription)),
         sourceDate: toDateOnly(reportDate),
         completionPercent,
         trackedMinutes,
@@ -335,14 +353,16 @@ export async function POST(
   }
 
   if (action === "restore_to_dashboard") {
-    if (isTodaysTask) {
+    if (isTodaysTask || latestUpdateIsToday) {
       const resumedStatus =
         latestUpdate && (latestUpdate.trackedMinutes > 0 || latestUpdate.actualStart) ? "in_progress" : "pending";
 
       await db.dailyTask.update({
         where: { id: task.id },
         data: {
-          taskDescription: stripHistoryMeta(task.taskDescription) || null,
+          // Stamped, not just un-archived: the card needs to say it came back
+          // from Complete, and the update row alone cannot carry that.
+          taskDescription: embedReopenMeta(stripHistoryMeta(task.taskDescription)),
         },
       });
 

@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { extractAssignmentAttachmentMeta } from "@/lib/assignment-attachments";
+import { formatTaskPriority, TASK_PRIORITY_OPTIONS } from "@/lib/task-priority";
 import { readTaskTimerSnapshot, writeTaskTimerSnapshot } from "@/lib/task-timer-storage";
 import { formatDateTimeInDhaka, toDateOnly } from "@/lib/utils";
 
@@ -571,9 +572,9 @@ export function AssignmentsCenter({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {["low", "normal", "high", "critical"].map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item}
+                    {TASK_PRIORITY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -795,7 +796,7 @@ export function AssignmentsCenter({
 
             <div className="space-y-5 px-6 py-6">
               <div className="flex flex-wrap gap-2">
-                <Badge variant={priorityVariant(selectedTask.priority)}>{selectedTask.priority}</Badge>
+                <Badge variant={priorityVariant(selectedTask.priority)}>{formatTaskPriority(selectedTask.priority)}</Badge>
                 <Badge variant={statusVariant(assignmentStatus(selectedTask))}>{assignmentStatus(selectedTask)}</Badge>
               </div>
 

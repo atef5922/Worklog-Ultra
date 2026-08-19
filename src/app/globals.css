@@ -4,9 +4,17 @@
   --font-sans: var(--font-manrope);
   /* Single source of truth for the top band: the dashboard header and the
      sidebar brand row must always share this height, or they visually drift. */
-  /* 3.125rem renders 45px at the reference viewport (root = 14.4px there);
-     it stays proportional on other screens like every other rem in the app. */
+  /* Mobile keeps 3.125rem: below 900px the root is a fixed 16px and the header
+     still uses 44px touch targets, which a 40px band cannot hold. The desktop
+     value is set alongside the fluid scale below. */
   --topbar-height: 3.125rem;
+  /*
+   * Rail width, in a variable because the collapse toggle swaps it. 12.1528rem
+   * is 175px at the reference viewport; collapsed is 60px, which holds a 20px
+   * icon with room to centre it.
+   */
+  --sidebar-width: 12.1528rem;
+  --sidebar-width-collapsed: 4.1667rem;
   --topbar-hairline: inset 0 -1px 0 rgba(223, 232, 247, 0.08);
   --background: #eef3fb;
   --foreground: #162235;
@@ -119,6 +127,18 @@ html {
 @media (min-width: 900px) {
   html {
     font-size: clamp(9px, min(1.054vw, 2.3vh), 160px);
+  }
+
+  /*
+   * :root, not html. The mobile value above is declared on :root, and :root
+   * outranks a bare html selector, so an override written on html loses no
+   * matter that it sits inside the media query.
+   *
+   * 2.7778rem renders 40px at the reference viewport (root = 14.4px there); it
+   * stays proportional on other screens like every other rem in the app.
+   */
+  :root {
+    --topbar-height: 2.7778rem;
   }
 }
 
@@ -503,21 +523,17 @@ html[data-theme="dark"] .auth-backdrop {
  * Panel accents.
  *
  * Each dashboard panel carries its own colour: a hairline gradient bar across
- * the top and a soft corner wash. Both are painted as background layers rather
- * than pseudo-elements, so they sit under the content with no stacking or
- * overflow side effects, and they follow the panel's border radius for free.
+ * the top. There used to be a second layer here too, a soft radial wash
+ * fading in from the top-right corner — meant as a subtle colour tint, it
+ * sat directly behind the header's date text and count badge and read as a
+ * grey smudge/shadow behind them rather than "clean". The bar alone still
+ * carries the panel's identity.
  */
 .dashboard-accent {
-  background-repeat: no-repeat, no-repeat;
-  background-size:
-    100% 3px,
-    100% 100%;
-  background-position:
-    top center,
-    top right;
-  background-image:
-    linear-gradient(90deg, var(--accent-a), var(--accent-b)),
-    radial-gradient(120% 85% at 100% 0%, var(--accent-wash), transparent 62%);
+  background-repeat: no-repeat;
+  background-size: 100% 3px;
+  background-position: top center;
+  background-image: linear-gradient(90deg, var(--accent-a), var(--accent-b));
 }
 
 .dashboard-accent:hover {
@@ -621,6 +637,113 @@ html[data-theme="dark"] .auth-backdrop {
   height: var(--topbar-height);
   flex: 0 0 auto;
   box-shadow: var(--topbar-hairline);
+}
+
+/*
+ * Collapsed rail.
+ *
+ * Every rule keys off `data-sidebar-collapsed` on <html> rather than off React
+ * state, and the labels are hidden rather than unmounted. That keeps the markup
+ * the server sends identical to the markup the client hydrates, so restoring the
+ * stored preference cannot produce a hydration mismatch. The mobile drawer is
+ * untouched: these selectors are all scoped to .dashboard-sidebar.
+ */
+html[data-sidebar-collapsed="true"] {
+  --sidebar-width: var(--sidebar-width-collapsed);
+}
+
+html[data-sidebar-collapsed="true"] .dashboard-sidebar [data-sidebar-label] {
+  display: none;
+}
+
+/* With the labels gone the icons have a row to themselves, so centre them. */
+html[data-sidebar-collapsed="true"] .dashboard-sidebar [data-sidebar-row] {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+/* The unread dot has no end-of-row left to sit at, so it rides the icon. */
+html[data-sidebar-collapsed="true"] .dashboard-sidebar [data-sidebar-badge] {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.375rem;
+  margin-left: 0;
+}
+
+html[data-sidebar-collapsed="true"] .dashboard-sidebar [data-sidebar-brand] {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/*
+ * Collapse control.
+ *
+ * It rides the seam between the rail and the header rather than sitting inside
+ * the brand row. Measured in Manrope, "WorkLog Ultra" is 95px at 1rem; a 175px
+ * rail minus its 39.6px of row padding, the 28.8px mark and the gap leaves
+ * 99.4px — enough for the name, but not for the name and a button. The name was
+ * what lost, truncating to "WorkLo…". Both surfaces are navy at this seam, so a
+ * ringed disc there reads as a deliberate control rather than something stuck on
+ * the edge.
+ */
+.dashboard-sidebar-toggle {
+  position: absolute;
+  right: 0;
+  top: calc(var(--topbar-height) / 2);
+  z-index: 1;
+  display: inline-flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(226, 236, 255, 0.24);
+  background: linear-gradient(150deg, #1a367f 0%, #0a1a4d 100%);
+  color: rgba(233, 240, 255, 0.86);
+  box-shadow:
+    0 8px 18px rgba(3, 8, 18, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transform: translate(50%, -50%);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.dashboard-sidebar-toggle:hover {
+  border-color: rgba(226, 236, 255, 0.5);
+  background: linear-gradient(150deg, #244aa8 0%, #12275f 100%);
+  color: #ffffff;
+  box-shadow:
+    0 10px 22px rgba(3, 8, 18, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  transform: translate(50%, -50%) scale(1.08);
+}
+
+.dashboard-sidebar-toggle:active {
+  transform: translate(50%, -50%) scale(0.96);
+}
+
+.dashboard-sidebar-toggle:focus-visible {
+  outline: 2px solid #8ea8ff;
+  outline-offset: 2px;
+}
+
+.dashboard-sidebar [data-sidebar-toggle-icon="expand"] {
+  display: none;
+}
+
+html[data-sidebar-collapsed="true"] .dashboard-sidebar [data-sidebar-toggle-icon="expand"] {
+  display: block;
+}
+
+html[data-sidebar-collapsed="true"] .dashboard-sidebar [data-sidebar-toggle-icon="collapse"] {
+  display: none;
 }
 
 .dashboard-topbar .text-\[var\(--foreground\)\],
@@ -947,4 +1070,424 @@ html[data-theme="dark"] .history-row-recent {
 
 html[data-theme="dark"] .history-row-yesterday {
   background: linear-gradient(135deg, rgba(51, 65, 85, 0.96) 0%, rgba(120, 53, 15, 0.84) 100%);
+}
+
+/*
+ * Work plan task cards.
+ *
+ * Every card used to paint a full-bleed gradient chosen by priority and state —
+ * rose for urgent, amber for pending, blue for running, emerald for done — so a
+ * normal day turned the two columns into a block of competing colour and the
+ * eye had nothing left to land on. The surface is now the same panel white as
+ * everything else on the dashboard, and the colour survives as a 3px rail down
+ * the left edge plus the chips: enough to scan the column by, quiet enough to
+ * read the text over. This is the usual pattern in dashboards that hold a lot of
+ * rows, and it is what makes the density feel deliberate instead of loud.
+ *
+ * The tone is set by one `data-tone` attribute, so the card never has to know
+ * which of the six accents it ended up with.
+ */
+.task-card {
+  --task-accent: #94a3b8;
+  position: relative;
+  isolation: isolate;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: none;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+/*
+ * A lift, not a zoom.
+ *
+ * scale() resizes every glyph on the card, and on Windows with a fractional
+ * display scale (125%/150%, the common laptop default) that resize lands on
+ * a sub-pixel grid the OS compositor doesn't sample cleanly — the text goes
+ * soft, and forcing a GPU layer to work around it made it worse, not better,
+ * because now that layer's own rasterisation was the mismatched one. A
+ * translateY lift moves the same pixels instead of resampling them, so
+ * there is nothing for a display scale to blur: this is the same lift
+ * [data-dashboard-card] already uses elsewhere on the page.
+ */
+.task-card:hover {
+  box-shadow: none;
+  transform: translateY(-3px);
+  z-index: 1;
+}
+
+/*
+ * Priority border — one named colour per tier, white card behind all of
+ * them. A named colour the eye can actually learn ("violet border is High")
+ * beats one derived from a blend; the card surface stays the plain panel
+ * colour (white in light mode) so the border alone carries the meaning.
+ */
+.task-card[data-tone="critical"] {
+  --task-accent: #9f1239;
+  border-color: #e5e7eb;
+}
+
+.task-card[data-tone="high"] {
+  --task-accent: #ef4444;
+  border-color: #e5e7eb;
+}
+
+.task-card[data-tone="normal"] {
+  --task-accent: #2563eb;
+  border-color: #e5e7eb;
+}
+
+.task-card[data-tone="low"] {
+  --task-accent: #0d9488;
+  border-color: #e5e7eb;
+}
+
+.task-card[data-tone="done"] {
+  --task-accent: #059669;
+  border-color: #e5e7eb;
+}
+
+/* Live indicator removed - keeping subtle gray border for clean look */
+.task-card[data-live="true"] {
+  /* No special styling - maintains the subtle gray border */
+}
+
+/* The note keeps a surface of its own so it still reads as a quote of the task
+   rather than a second paragraph — a muted fill only, no border, so it doesn't
+   add a second outline inside the card's own. */
+.task-card-note {
+  background: var(--panel-muted);
+}
+
+/*
+ * Card chips.
+ *
+ * One shape, one size, one weight; only the fill changes, and it comes from
+ * `data-chip`. These used to be a saturated two-stop gradient with white text,
+ * which made every chip the loudest thing on a card whose actual subject is
+ * the task title, then briefly a very light tinted wash that read as washed
+ * out rather than premium. This is the middle: a flat, fully opaque solid
+ * fill per tone — the soft-badge convention most SaaS dashboards use for
+ * labels — declared as real colour pairs per theme instead of one blended
+ * from a CSS variable, so the fill is genuinely solid in both.
+ */
+.task-chip {
+  border: 1px solid transparent;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+html[data-theme="dark"] .task-chip {
+  background: #1e293b;
+  color: #cbd5e1;
+  border-color: #334155;
+}
+
+/* Professional muted color palette */
+.task-chip[data-chip="critical"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="critical"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="high"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="high"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="normal"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="normal"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="low"],
+.task-chip[data-chip="done"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="low"],
+html[data-theme="dark"] .task-chip[data-chip="done"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="active"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="active"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="pending"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="pending"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="followup"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="followup"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="continued"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="continued"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+.task-chip[data-chip="reopened"] {
+  background: #ffffff;
+  color: #000000;
+  border-color: #d1d5db;
+}
+
+html[data-theme="dark"] .task-chip[data-chip="reopened"] {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+/*
+ * The live dot.
+ *
+ * A task whose timer is actually counting gets the one moving thing on the
+ * card: a filled dot with a ring expanding out of it, the signal every
+ * monitoring dashboard uses for "this is happening now". The ring is a
+ * pseudo-element so the dot itself stays a crisp fixed size, and both take
+ * their colour from the chip they sit in.
+ */
+.task-live-dot {
+  position: relative;
+  display: inline-flex;
+  height: 0.375rem;
+  width: 0.375rem;
+  flex: none;
+  border-radius: 999px;
+  background: #22c55e;
+}
+
+.task-live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #22c55e;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes task-live-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+
+    70%,
+    100% {
+      transform: scale(2.8);
+      opacity: 0;
+    }
+  }
+
+  .task-live-dot::after {
+    animation: task-live-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* The card itself breathes while its timer runs, so a live task is
+     findable from across the column without reading a single chip — the
+     same signal the dot gives, just at card scale. */
+  @keyframes task-live-breathe {
+    0%,
+    100% {
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--task-accent) 30%, transparent);
+    }
+
+    50% {
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--task-accent) 45%, transparent);
+    }
+  }
+
+  .task-card[data-live="true"] {
+    animation: task-live-breathe 2.4s ease-in-out infinite;
+  }
+}
+
+/*
+ * Task action buttons — soft premium fills.
+ *
+ * Solid saturated fills (Start/Pause/Done/Edit/Delete etc.) still read as too
+ * loud sitting in a row together. This is the same light-fill/dark-text
+ * convention the chips already use: a faint tint plus solid text carries the
+ * meaning without the button shouting for attention. One class per meaning,
+ * not per component, so the timer's Start/Pause/Done and the manage
+ * controls' Edit/Delete/Archive/Restore all draw from the same five.
+ */
+/* Clean white button colors with colored hover states */
+.task-btn-go {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+}
+
+.task-btn-go:hover:not(:disabled) {
+  background: #166534;
+  border-color: #166534;
+  color: #ffffff;
+}
+
+.task-btn-hold {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+}
+
+.task-btn-hold:hover:not(:disabled) {
+  background: #92400e;
+  border-color: #92400e;
+  color: #ffffff;
+}
+
+.task-btn-primary {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+}
+
+.task-btn-primary:hover:not(:disabled) {
+  background: #5b21b6;
+  border-color: #5b21b6;
+  color: #ffffff;
+}
+
+.task-btn-neutral {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+}
+
+.task-btn-neutral:hover:not(:disabled) {
+  background: #6b7280;
+  border-color: #6b7280;
+  color: #ffffff;
+}
+
+.task-btn-danger {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+}
+
+.task-btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+[class*="task-btn-"]:disabled {
+  opacity: 0.55;
+}
+
+html[data-theme="dark"] .task-btn-go {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+html[data-theme="dark"] .task-btn-go:hover:not(:disabled) {
+  background: #111827;
+  border-color: #4b5563;
+}
+
+html[data-theme="dark"] .task-btn-hold {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+html[data-theme="dark"] .task-btn-hold:hover:not(:disabled) {
+  background: #111827;
+  border-color: #4b5563;
+}
+
+html[data-theme="dark"] .task-btn-primary {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+html[data-theme="dark"] .task-btn-primary:hover:not(:disabled) {
+  background: #111827;
+  border-color: #4b5563;
+}
+
+html[data-theme="dark"] .task-btn-neutral {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+html[data-theme="dark"] .task-btn-neutral:hover:not(:disabled) {
+  background: #111827;
+  border-color: #4b5563;
+}
+
+html[data-theme="dark"] .task-btn-danger {
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #374151;
+}
+
+html[data-theme="dark"] .task-btn-danger:hover:not(:disabled) {
+  background: #111827;
+  border-color: #4b5563;
 }
