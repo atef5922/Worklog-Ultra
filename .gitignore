@@ -46,5 +46,21 @@ next-env.d.ts
 /dist/
 /release/
 
+# Desktop runtime payload.
+#
+# electron-builder pulls these off disk via `extraResources` at package time,
+# so ignoring them costs the build nothing — it only keeps ~190MB of binaries
+# out of history. schema.sql and the 7-Zip licences stay tracked: the first is
+# real source (packaged as database-schema.sql), the second two are tiny and
+# legally worth keeping.
+/desktop-runtime/postgres/
+/desktop-runtime/app-runtime.7z
+/desktop-runtime/app-staging/
+/desktop-runtime/tools/*.exe
+
+# Packaged deploy bundles (rebuilt from source, never edited by hand)
+/worklog-ultra-deploy.zip
+*.7z
+
 # Runtime uploads (user data, not source)
 /public/uploads/
