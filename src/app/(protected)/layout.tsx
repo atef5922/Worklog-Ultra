@@ -77,7 +77,7 @@ export default async function ProtectedLayout({
             <TaskTimerAutoCloser />
             <WorkspaceNoticeLive />
             <DashboardMotionShell>{children}</DashboardMotionShell>
-            <TaskScreenshotMonitor currentUserId={user.id} initiallyWorking={Boolean(attendanceSnapshot?.checkInAt && !attendanceSnapshot?.checkOutAt)} />
+            <TaskScreenshotMonitor currentUserId={user.id} />
           </main>
         </div>
       </div>

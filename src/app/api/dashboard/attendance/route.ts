@@ -2,10 +2,49 @@ import { NextRequest } from "next/server";
 import { UserRole } from "@prisma/client";
 import { apiError, apiSuccess } from "@/lib/api";
 import { embedAttendanceOvertimeMeta } from "@/lib/attendance-overtime";
-import { requireUser } from "@/lib/auth/server";
+import { getServerAuthContext, requireUser } from "@/lib/auth/server";
 import { db } from "@/lib/db";
 import { attendanceUpdateSchema } from "@/lib/validators/worklog";
 import { calculateMinutesBetween, getDhakaCutoffIso, toDateOnly } from "@/lib/utils";
+
+/**
+ * Authoritative "is this employee's work session open right now" check.
+ *
+ * The desktop agent's screenshot monitor polls this instead of trusting its
+ * own renderer state: it is what lets monitoring resume correctly after an
+ * app restart, and what lets the agent self-heal if it ever misses the IPC
+ * stop signal (crash, missed event) while attendance ended through the web
+ * UI on another device. Uses `getServerAuthContext` rather than `requireUser`
+ * because a background agent needs a 401 it can act on, not a redirect to an
+ * HTML login page.
+ */
+export async function GET() {
+  const { user } = await getServerAuthContext();
+
+  if (!user) {
+    return apiError("Authentication required.", 401);
+  }
+
+  const today = toDateOnly();
+  const record = await db.attendanceRecord.findUnique({
+    where: {
+      userId_attendanceDate: {
+        userId: user.id,
+        attendanceDate: new Date(`${today}T00:00:00.000Z`),
+      },
+    },
+    select: { checkInAt: true, checkOutAt: true, breakMinutes: true },
+  });
+
+  const active = Boolean(record?.checkInAt && !record.checkOutAt);
+
+  return apiSuccess({
+    userId: user.id,
+    active,
+    checkInAt: record?.checkInAt?.toISOString() ?? null,
+    checkOutAt: record?.checkOutAt?.toISOString() ?? null,
+  });
+}
 
 /**
  * An empty string is the client saying "clear this field"; an absent field means

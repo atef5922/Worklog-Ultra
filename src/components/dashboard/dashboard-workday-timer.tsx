@@ -328,21 +328,20 @@ export function DashboardWorkdayTimer({
 
     if (!response.ok) {
       toast.error(result?.message ?? "Work timer update failed.");
-      return;
+      return false;
     }
 
     setAttendance(next);
     toast.success(result?.message ?? successMessage);
     router.refresh();
+    return true;
   }
 
   async function startTimer() {
     if (saving) return;
-    window.dispatchEvent(new CustomEvent("worklog:task-monitor-start", { detail: { source: "attendance", label: "Attendance" } }));
-    window.dispatchEvent(new CustomEvent(ATTENDANCE_STARTED_EVENT));
     const startTime = new Date();
     const nowLabel = toDhakaOffsetIso(startTime);
-    await persist(
+    const succeeded = await persist(
       {
         ...attendance,
         status: attendance.status || "present",
@@ -351,6 +350,15 @@ export function DashboardWorkdayTimer({
       },
       "Work timer started.",
     );
+
+    // Screenshot monitoring must never start on the optimistic click alone —
+    // only once the backend has actually confirmed attendance is open, so a
+    // failed check-in (network error, validation) can never leave the agent
+    // capturing against a work session that does not exist server-side.
+    if (!succeeded) return;
+
+    window.dispatchEvent(new CustomEvent("worklog:task-monitor-start", { detail: { source: "attendance", label: "Attendance" } }));
+    window.dispatchEvent(new CustomEvent(ATTENDANCE_STARTED_EVENT));
     writeStoredTimer(dayKey, currentUserId, {
       accumulatedSeconds,
       lastCheckInAt: nowLabel,
@@ -362,11 +370,17 @@ export function DashboardWorkdayTimer({
     if (!isRunning) return;
     setIsBreakRunning(true);
     setBreakStartTime(now ?? Date.now());
+    // Pause immediately and client-side only: breaks have no backend
+    // confirmation step in this app, and failing to pause is the unsafe
+    // direction here (a capture during an approved break), so this does not
+    // wait for stopBreak()'s eventual persist() call.
+    window.dispatchEvent(new CustomEvent("worklog:task-monitor-pause"));
     toast.info("Break started - time is counting.");
   }
 
   async function stopBreak() {
     if (!isBreakRunning || breakStartTime === null || now === null) return;
+    window.dispatchEvent(new CustomEvent("worklog:task-monitor-resume"));
 
     const breakDurationSeconds = Math.max(0, Math.floor((now - breakStartTime) / 1000));
     const breakDurationMinutes = Math.ceil(breakDurationSeconds / 60);

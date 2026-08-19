@@ -1,11 +1,9 @@
 "use client";
 
-import { Camera, Download, FolderOpen } from "lucide-react";
+import { Camera } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 
-export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { currentUserId: string; initiallyWorking: boolean }) {
+export function TaskScreenshotMonitor({ currentUserId }: { currentUserId: string }) {
   const [status, setStatus] = useState<WorklogTrackerStatus | null>(null);
   /*
    * The desktop preload can attach `window.worklogDesktop` after React hydrates.
@@ -41,12 +39,13 @@ export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { cur
   useEffect(() => {
     const bridge = window.worklogDesktop;
     if (!bridge) return;
+
+    // No auto-start here: whether monitoring should be running after a
+    // reload or restart is decided by the main process against the backend's
+    // attendance state (see screenshot-monitor.cjs `reconcile()`), not by
+    // this component's mount timing. This only ever mirrors that state.
     void bridge.getTrackerStatus().then(setStatus);
     const unsubscribe = bridge.onTrackerStatus(setStatus);
-
-    if (initiallyWorking) {
-      void bridge.startTracking({ source: "attendance", label: "Attendance", userId: currentUserId, taskId: "attendance" }).then(setStatus);
-    }
 
     const onStart = (event: Event) => {
       const detail = (event as CustomEvent<{ source?: string; label?: string }>).detail;
@@ -57,23 +56,31 @@ export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { cur
       const detail = (event as CustomEvent<{ source?: string }>).detail;
       void bridge.stopTracking({ source: detail?.source ?? "work" }).then(setStatus);
     };
+    const onPause = () => void bridge.pauseTracking().then(setStatus);
+    const onResume = () => void bridge.resumeTracking().then(setStatus);
+
     window.addEventListener("worklog:task-monitor-start", onStart);
     window.addEventListener("worklog:task-monitor-stop", onStop);
+    window.addEventListener("worklog:task-monitor-pause", onPause);
+    window.addEventListener("worklog:task-monitor-resume", onResume);
     return () => {
       unsubscribe();
       window.removeEventListener("worklog:task-monitor-start", onStart);
       window.removeEventListener("worklog:task-monitor-stop", onStop);
+      window.removeEventListener("worklog:task-monitor-pause", onPause);
+      window.removeEventListener("worklog:task-monitor-resume", onResume);
     };
     // isDesktop is a dependency so this wires up the moment the bridge appears,
     // not only when the component happened to mount after it.
-  }, [currentUserId, initiallyWorking, isDesktop]);
+  }, [currentUserId, isDesktop]);
 
-  async function exportScreenshots() {
-    const result = await window.worklogDesktop?.exportTrackerScreenshots({ userId: currentUserId });
-    if (!result || result.canceled) return;
-    if (!result.ok) toast.error(result.message ?? "Screenshots could not be exported.");
-    else toast.success(`Screenshots exported to ${result.destination}`);
-  }
+  const statusLabel = !isDesktop
+    ? "Open the WorkLog desktop app to enable native screenshots."
+    : status?.paused
+      ? "Paused for break — resumes automatically when the break ends."
+      : status?.running
+        ? `Monitoring active · every 5 min · ${status.pending} pending upload${status.pending === 1 ? "" : "s"}`
+        : "Ready — Attendance Start begins capture.";
 
   return (
     <section
@@ -85,42 +92,17 @@ export function TaskScreenshotMonitor({ currentUserId, initiallyWorking }: { cur
       <div className="flex items-center gap-2.5">
         <span
           className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${
-            status?.running ? "bg-emerald-500/12 text-emerald-500" : "bg-slate-500/10 text-slate-500"
+            status?.paused
+              ? "bg-amber-500/12 text-amber-500"
+              : status?.running
+                ? "bg-emerald-500/12 text-emerald-500"
+                : "bg-slate-500/10 text-slate-500"
           }`}
         >
           <Camera className="h-3.5 w-3.5" />
         </span>
-        <p className="shrink-0 text-[0.78rem] font-bold text-[var(--foreground)]">Task Monitor</p>
-        <p
-          className="min-w-0 flex-1 truncate text-[0.72rem] text-[var(--muted-foreground)]"
-          title={status?.folder ? `Saved to ${status.folder} · kept ${status.retentionDays} days` : undefined}
-        >
-          {!isDesktop
-            ? "Open the WorkLog desktop app to enable native screenshots."
-            : status?.running
-              ? `Running · ${status.active.length} source(s) · every 5 min · ${status.pending} pending`
-              : "Ready — Attendance or task Start begins capture."}
-        </p>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button
-            className="h-7 rounded-lg px-2.5 text-[0.7rem]"
-            disabled={!isDesktop}
-            onClick={() => void exportScreenshots()}
-            type="button"
-            variant="secondary"
-          >
-            <Download className="h-3.5 w-3.5" /> Export
-          </Button>
-          <Button
-            className="h-7 rounded-lg px-2.5 text-[0.7rem]"
-            disabled={!isDesktop}
-            onClick={() => void window.worklogDesktop?.openTrackerFolder({ userId: currentUserId })}
-            type="button"
-            variant="secondary"
-          >
-            <FolderOpen className="h-3.5 w-3.5" /> Folder
-          </Button>
-        </div>
+        <p className="shrink-0 text-[0.78rem] font-bold text-[var(--foreground)]">Screen Monitoring</p>
+        <p className="min-w-0 flex-1 truncate text-[0.72rem] text-[var(--muted-foreground)]">{statusLabel}</p>
       </div>
     </section>
   );

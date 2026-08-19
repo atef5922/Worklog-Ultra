@@ -462,6 +462,11 @@ export function DashboardHeader({
   }
 
   async function logout() {
+    // Stop monitoring before the session cookie is gone: once it is cleared,
+    // the agent's own reconcile() would eventually catch this via a 401 and
+    // self-heal, but that can take up to a minute, and account switching
+    // must never leave a capture running under a session that just ended.
+    await window.worklogDesktop?.stopTracking({ source: "attendance" });
     const response = await fetch("/api/auth/logout", { method: "POST" });
     const result = await response.json();
     toast.success(result.message);

@@ -2,15 +2,15 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("worklogDesktop", {
   isDesktop: true,
-  startTracking: (input) => ipcRenderer.invoke("tracker:start", input),
-  stopTracking: (input) => ipcRenderer.invoke("tracker:stop", input),
-  getTrackerStatus: () => ipcRenderer.invoke("tracker:status"),
-  openTrackerFolder: (input) => ipcRenderer.invoke("tracker:open-folder", input),
-  exportTrackerScreenshots: (input) => ipcRenderer.invoke("tracker:export", input),
+  startTracking: (input) => ipcRenderer.invoke("screenshot:start", input),
+  stopTracking: (input) => ipcRenderer.invoke("screenshot:stop", input),
+  pauseTracking: () => ipcRenderer.invoke("screenshot:pause"),
+  resumeTracking: () => ipcRenderer.invoke("screenshot:resume"),
+  getTrackerStatus: () => ipcRenderer.invoke("screenshot:status"),
   onTrackerStatus: (callback) => {
     const listener = (_event, status) => callback(status);
-    ipcRenderer.on("tracker:status", listener);
-    return () => ipcRenderer.removeListener("tracker:status", listener);
+    ipcRenderer.on("screenshot:status", listener);
+    return () => ipcRenderer.removeListener("screenshot:status", listener);
   },
   onAppQuit: (callback) => {
     const listener = () => callback();
