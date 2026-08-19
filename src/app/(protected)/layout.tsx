@@ -1,3 +1,4 @@
+import { AppCloseTimerStop } from "@/components/dashboard/app-close-timer-stop";
 import { AssignmentNotificationLive } from "@/components/dashboard/assignment-notification-live";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Sidebar } from "@/components/dashboard/sidebar";
@@ -38,6 +39,7 @@ export default async function ProtectedLayout({
     avatarUrl: user.avatarUrl,
     extraAccess: user.extraAccess,
     assignmentNotifications: incomingAssignmentNotifications,
+    noticeNotifications,
   };
   const headerUser: DashboardHeaderUser = {
     name: user.name,
@@ -70,6 +72,7 @@ export default async function ProtectedLayout({
         <div className="dashboard-scroll flex min-h-dvh min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto md:h-screen">
           <DashboardHeader user={headerUser} />
           <main className="flex min-h-0 flex-1 flex-col px-3 py-4 sm:px-4 sm:py-5 xl:px-6 2xl:px-7">
+            <AppCloseTimerStop />
             <AssignmentNotificationLive />
             <TaskTimerAutoCloser />
             <WorkspaceNoticeLive />

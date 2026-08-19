@@ -1,6 +1,6 @@
 "use client";
 
-import { PlayCircle, Square } from "lucide-react";
+import { PlayCircle, Square, Coffee, Pause } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -97,6 +97,13 @@ function formatElapsedReadable(totalSeconds: number) {
   return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+function formatBreakTime(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function parseJsonSafely(raw: string) {
   try {
     return raw ? JSON.parse(raw) : null;
@@ -143,6 +150,8 @@ export function DashboardWorkdayTimer({
   const [dayKey, setDayKey] = useState(() => toDateOnly());
   const [accumulatedSeconds, setAccumulatedSeconds] = useState(0);
   const [attendance, setAttendance] = useState(() => buildAttendanceState(initialAttendance, toDateOnly()));
+  const [isBreakRunning, setIsBreakRunning] = useState(false);
+  const [breakStartTime, setBreakStartTime] = useState<number | null>(null);
 
   function resetLocalTimerState() {
     setAccumulatedSeconds(0);
@@ -265,6 +274,7 @@ export function DashboardWorkdayTimer({
   const isRunning = Boolean(attendance.checkInAt) && !attendance.checkOutAt;
   const showSummary = mode === "full" || mode === "summary";
   const showButton = mode === "full" || mode === "button";
+
   const liveSessionSeconds = useMemo(() => {
     if (!attendance.checkInAt || attendance.checkOutAt || now === null) {
       return 0;
@@ -273,6 +283,13 @@ export function DashboardWorkdayTimer({
     const start = new Date(attendance.checkInAt).getTime();
     return Math.max(0, Math.floor((now - start) / 1000));
   }, [attendance.checkInAt, attendance.checkOutAt, now]);
+
+  const currentBreakSeconds = useMemo(() => {
+    if (!isBreakRunning || breakStartTime === null || now === null) {
+      return 0;
+    }
+    return Math.max(0, Math.floor((now - breakStartTime) / 1000));
+  }, [isBreakRunning, breakStartTime, now]);
 
   const totalSeconds = accumulatedSeconds + liveSessionSeconds;
   const elapsedLabel = useMemo(() => {
@@ -286,54 +303,9 @@ export function DashboardWorkdayTimer({
     autoClosingRef.current = false;
   }, [dayKey]);
 
-  useEffect(() => {
-    const safeActiveCheckInAt =
-      attendance.checkInAt && now !== null
-        ? getValidActiveCheckInAt(attendance.checkInAt, dayKey, now)
-        : null;
-
-    if (
-      saving ||
-      autoClosingRef.current ||
-      !safeActiveCheckInAt ||
-      attendance.checkOutAt ||
-      now === null ||
-      toDateOnly(safeActiveCheckInAt) !== dayKey
-    ) {
-      return;
-    }
-
-    if (attendance.checkInAt && !safeActiveCheckInAt) {
-      resetLocalTimerState();
-      return;
-    }
-
-    const cutoffIso = getDhakaCutoffIso(dayKey, 19, 30);
-    const cutoffAt = new Date(cutoffIso).getTime();
-
-    if (now < cutoffAt) {
-      return;
-    }
-
-    autoClosingRef.current = true;
-    const sessionSeconds = Math.max(0, Math.floor((cutoffAt - new Date(safeActiveCheckInAt).getTime()) / 1000));
-    const nextAccumulatedSeconds = accumulatedSeconds + sessionSeconds;
-
-    void persist(
-      {
-        ...attendance,
-        checkOutAt: cutoffIso,
-      },
-      "Attendance auto-closed at 7:30 PM.",
-    ).then(() => {
-      setAccumulatedSeconds(nextAccumulatedSeconds);
-      writeStoredTimer(dayKey, currentUserId, {
-        accumulatedSeconds: nextAccumulatedSeconds,
-        lastCheckInAt: safeActiveCheckInAt,
-        lastCheckOutAt: cutoffIso,
-      });
-    });
-  }, [accumulatedSeconds, attendance, currentUserId, dayKey, now, saving]);
+  // Clock-based attendance auto-close removed: attendance now stops only on manual stopTimer()
+  // or app close. The 7:30 PM cutoff is handled as crash-recovery fallback in the
+  // server-side attendance API (getDhakaCutoffIso clamping), not a live client-side clock.
 
   async function persist(next: typeof attendance, successMessage: string) {
     setSaving(true);
@@ -386,6 +358,40 @@ export function DashboardWorkdayTimer({
     });
   }
 
+  function startBreak() {
+    if (!isRunning) return;
+    setIsBreakRunning(true);
+    setBreakStartTime(now ?? Date.now());
+    toast.info("Break started - time is counting.");
+  }
+
+  async function stopBreak() {
+    if (!isBreakRunning || breakStartTime === null || now === null) return;
+
+    const breakDurationSeconds = Math.max(0, Math.floor((now - breakStartTime) / 1000));
+    const breakDurationMinutes = Math.ceil(breakDurationSeconds / 60);
+    const currentBreak = attendance.breakMinutes ?? 0;
+    const nextBreakMinutes = currentBreak + breakDurationMinutes;
+
+    const standardBreak = 45;
+    const isOverBreak = nextBreakMinutes > standardBreak;
+    const overAmount = isOverBreak ? nextBreakMinutes - standardBreak : 0;
+    const message = isOverBreak
+      ? `Break recorded (${breakDurationMinutes}m, total ${nextBreakMinutes}m - ${overAmount}m over standard).`
+      : `Break recorded (${breakDurationMinutes}m, total ${nextBreakMinutes}m).`;
+
+    setIsBreakRunning(false);
+    setBreakStartTime(null);
+
+    await persist(
+      {
+        ...attendance,
+        breakMinutes: nextBreakMinutes,
+      },
+      message,
+    );
+  }
+
   async function stopTimer() {
     if (saving || !attendance.checkInAt) return;
     window.dispatchEvent(new CustomEvent("worklog:task-monitor-stop", { detail: { source: "attendance" } }));
@@ -404,12 +410,18 @@ export function DashboardWorkdayTimer({
     const nowLabel = toDhakaOffsetIso(stopTime);
     const sessionSeconds = Math.max(0, Math.floor((stopTime.getTime() - new Date(safeCheckInAt).getTime()) / 1000));
     const nextAccumulatedSeconds = accumulatedSeconds + sessionSeconds;
+
+    // Reset break time for the new day
+    setIsBreakRunning(false);
+    setBreakStartTime(null);
+
     await persist(
       {
         ...attendance,
         checkOutAt: nowLabel,
+        breakMinutes: 0, // Reset break for next day
       },
-      "Work timer stopped.",
+      "Work timer stopped. Data saved and reset for tomorrow.",
     );
     setAccumulatedSeconds(nextAccumulatedSeconds);
     writeStoredTimer(dayKey, currentUserId, {
@@ -426,6 +438,38 @@ export function DashboardWorkdayTimer({
   if (mode === "button") {
     return (
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        {isRunning && (
+          <>
+            {isBreakRunning ? (
+              <>
+                <div className="font-mono text-sm font-bold text-amber-600 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">
+                  Break: {formatBreakTime(currentBreakSeconds)}
+                </div>
+                <button
+                  className="button-force-white inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-[0.8rem] font-semibold transition bg-rose-500 hover:bg-rose-600"
+                  disabled={saving}
+                  onClick={stopBreak}
+                  type="button"
+                >
+                  <Square className="h-4 w-4" />
+                  <span className="hidden sm:inline">Stop Break</span>
+                  <span className="sm:hidden">Stop</span>
+                </button>
+              </>
+            ) : (
+              <button
+                className="button-force-white inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-[0.8rem] font-semibold transition bg-amber-500 hover:bg-amber-600"
+                disabled={saving}
+                onClick={startBreak}
+                type="button"
+              >
+                <Coffee className="h-4 w-4" />
+                <span className="hidden sm:inline">Take Break</span>
+                <span className="sm:hidden">Break</span>
+              </button>
+            )}
+          </>
+        )}
         <button
           className={`button-force-white inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-[0.8rem] font-semibold transition sm:px-3.5 ${
             isRunning ? "bg-rose-500 hover:bg-rose-600" : "bg-emerald-500 hover:bg-emerald-600"

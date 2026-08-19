@@ -7,7 +7,7 @@ import {
   writePendingTaskAutoStopNote,
   type TaskAutoStopNotePayload,
 } from "@/lib/task-auto-stop-note";
-import { getDhakaCutoffIso, parseDhakaDateTime, toDateTimeInputValue } from "@/lib/utils";
+import { getDhakaCutoffIso, parseDhakaDateTime, toDateTimeInputValue, toDateOnly } from "@/lib/utils";
 
 const TIMER_STORAGE_PREFIX = "task-timer:";
 
@@ -82,31 +82,37 @@ export function TaskTimerAutoCloser() {
           continue;
         }
 
-        const regularCutoffIso = getDhakaCutoffIso(parsedKey.reportDate, 19, 30);
-        const overtimeCutoffIso = getDhakaCutoffIso(parsedKey.reportDate, 22, 0);
-        const regularCutoffAt = new Date(regularCutoffIso).getTime();
-        const overtimeCutoffAt = new Date(overtimeCutoffIso).getTime();
-        const isOvertimeSession = runningStartedAt >= regularCutoffAt;
-        const shouldStop =
-          (!isOvertimeSession && now >= regularCutoffAt) ||
-          (isOvertimeSession && now >= overtimeCutoffAt);
+        // Crash-recovery only: stop timers from PREVIOUS dates if still running at 7:30 PM.
+        // Timers from today are not auto-stopped (user stops them manually or via app close).
+        const todayKey = toDateOnly();
+        const isFromPreviousDay = parsedKey.reportDate !== todayKey;
+
+        if (!isFromPreviousDay) {
+          continue;
+        }
+
+        // Timer is from a previous day and still running = app crashed without stopping it.
+        // Stop it at 7:30 PM as a safety net.
+        const crashRecoveryCutoffIso = getDhakaCutoffIso(parsedKey.reportDate, 19, 30);
+        const crashRecoveryCutoffAt = new Date(crashRecoveryCutoffIso).getTime();
+        const shouldStop = now >= crashRecoveryCutoffAt;
 
         if (!shouldStop) {
           continue;
         }
 
-        const stopIso = isOvertimeSession ? overtimeCutoffIso : regularCutoffIso;
-        const stopAt = new Date(stopIso).getTime();
+        const stopAt = crashRecoveryCutoffAt;
         const trackedSecondsBase = Number(
           snapshot.trackedSeconds ?? String(Number(snapshot.trackedMinutes || 0) * 60),
         );
         const trackedSecondsAtStop = trackedSecondsBase + Math.max(0, Math.floor((stopAt - runningStartedAt) / 1000));
+        const stopIso = toDateTimeInputValue(new Date(stopAt));
         const nextSnapshot: StoredTimerSnapshot = {
           status: "in_progress",
           trackedMinutes: String(Math.floor(trackedSecondsAtStop / 60)),
           trackedSeconds: String(trackedSecondsAtStop),
-          actualStart: snapshot.actualStart || toDateTimeInputValue(stopIso),
-          actualEnd: toDateTimeInputValue(stopIso),
+          actualStart: snapshot.actualStart || stopIso,
+          actualEnd: stopIso,
           runningStartedAt: "",
         };
 

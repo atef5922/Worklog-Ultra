@@ -12,4 +12,9 @@ contextBridge.exposeInMainWorld("worklogDesktop", {
     ipcRenderer.on("tracker:status", listener);
     return () => ipcRenderer.removeListener("tracker:status", listener);
   },
+  onAppQuit: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("app:quit", listener);
+    return () => ipcRenderer.removeListener("app:quit", listener);
+  },
 });

@@ -1,9 +1,7 @@
-import Image from "next/image";
-import Link from "next/link";
-import { BellRing, CalendarCheck2, Check, CheckCircle2, CircleAlert, ClipboardList, Clock3, PlayCircle, TimerReset } from "lucide-react";
+import { CalendarCheck2, Check, CheckCircle2, ClipboardList, Clock3, PlayCircle, TimerReset } from "lucide-react";
 import { PanelHeader } from "@/components/dashboard/panel-header";
+import { DashboardKpiCards, type DashboardKpiCard } from "@/components/dashboard/dashboard-kpi-cards";
 import { DashboardProgressCard } from "@/components/dashboard/dashboard-progress-card";
-import { DashboardRecurringQuickAdd } from "@/components/dashboard/dashboard-recurring-quick-add";
 import { DashboardTaskNotifier } from "@/components/dashboard/dashboard-task-notifier";
 import { DashboardTimeSummary } from "@/components/dashboard/dashboard-time-summary";
 import { DashboardWorkdayTimer } from "@/components/dashboard/dashboard-workday-timer";
@@ -11,7 +9,13 @@ import { DashboardWorkPlanSection } from "@/components/dashboard/dashboard-work-
 import { DashboardWorkspaceModal } from "@/components/dashboard/dashboard-workspace-modal";
 import { requireUser } from "@/lib/auth/server";
 import { extractAssignmentReviewReason } from "@/lib/assignment-review";
-import { countDashboardTaskStats, filterTodaysWorkPlanTasks } from "@/lib/dashboard-work-plan-filter";
+import {
+  countDashboardTaskStats,
+  filterTodaysWorkPlanTasks,
+  getTaskStatusForDashboard,
+  getTaskUpdateForDate,
+} from "@/lib/dashboard-work-plan-filter";
+import { taskPriorityRank } from "@/lib/task-priority";
 import { canUserEditReportDate, getAssignableUsers, getCurrentUserAttendanceSnapshot, getDashboardData, getDepartments, getPlanSuggestions, getPlanWithReports } from "@/lib/worklog";
 import { formatDateTimeInDhaka, isTenderDepartmentName, toDateOnly } from "@/lib/utils";
 
@@ -65,19 +69,6 @@ const statCardStyles = [
   },
 ];
 
-const notices = [
-  "Save today's tasks before the first work block starts.",
-  "Complete your report before day close.",
-  "Keep high-priority tasks updated so progress stays visible.",
-];
-
-function priorityRank(priority: string) {
-  if (priority === "critical") return 0;
-  if (priority === "high") return 1;
-  if (priority === "normal") return 2;
-  return 3;
-}
-
 function formatHoursAndMinutes(hoursLabel: string) {
   const numericHours = Number(hoursLabel.replace("h", ""));
 
@@ -121,25 +112,6 @@ function getMotivationalMessage(input: {
   const dayKey = toDateOnly();
   const seed = `${input.name}-${input.role}-${dayKey}-${input.plannedTasks}-${input.completedTasks}-${input.pendingTasks}-${input.trackedMinutes}`;
 
-  if (input.role === "manager" || input.role === "admin") {
-    return {
-      message: `Hello ${input.name}, hope your day goes well today.`,
-    };
-  }
-
-  if (input.role === "hr") {
-    const hrPool = [
-      `Hello ${input.name}, hope your day goes smoothly today.`,
-      `Hello ${input.name}, wishing you a calm and productive day.`,
-      `Hello ${input.name}, hope today moves well for you.`,
-      `Hello ${input.name}, wishing you a good day ahead.`,
-    ];
-
-    return {
-      message: hrPool[buildHash(seed) % hrPool.length],
-    };
-  }
-
   const employeePool = [
     `Hello ${input.name}, your next good step can make today count.`,
     `Hello ${input.name}, stay steady today and your work will speak for you.`,
@@ -181,7 +153,8 @@ export default async function DashboardPage() {
 
   const today = new Date();
   const activeTasks = filterTodaysWorkPlanTasks(data.tasks).sort(
-    (left, right) => priorityRank(left.priority) - priorityRank(right.priority) || left.taskTitle.localeCompare(right.taskTitle),
+    (left, right) =>
+      taskPriorityRank(left.priority) - taskPriorityRank(right.priority) || left.taskTitle.localeCompare(right.taskTitle),
   );
   const dashboardStats = countDashboardTaskStats(data.tasks);
   const completedTasks = dashboardStats.completedTasks;
@@ -189,7 +162,6 @@ export default async function DashboardPage() {
   const pendingTasks = dashboardStats.pendingTasks;
   const plannedTasks = dashboardStats.plannedTasks;
   const workedMinutes = activeTasks.reduce((sum, task) => sum + (task.updates[0]?.trackedMinutes ?? 0), 0);
-  const urgentTasks = activeTasks.filter((task) => ["high", "critical"].includes(task.priority)).slice(0, 3);
   const attendanceStatusLabel =
     attendance?.checkInAt && !attendance?.checkOutAt
       ? "You are checked in"
@@ -208,51 +180,117 @@ export default async function DashboardPage() {
 
   const statCards = [
     {
+      key: "planned" as const,
       title: "Planned Tasks",
       value: plannedTasks,
-      linkLabel: "View all",
       href: "/dashboard/plan",
     },
     {
+      key: "completed" as const,
       title: "Completed Tasks",
       value: completedTasks,
-      linkLabel: "View all",
       href: "/dashboard/report",
     },
     {
+      key: "inProgress" as const,
       title: "In Progress Tasks",
       value: inProgressTasks,
-      linkLabel: "View all",
       href: "/dashboard/report",
     },
     {
+      key: "pending" as const,
       title: "Pending Tasks",
       value: pendingTasks,
-      linkLabel: "View all",
       href: "/dashboard/report",
     },
     {
+      key: "workTime" as const,
       title: "Actual Work Time",
       value: formatHoursAndMinutes(data.kpis.worklogHours),
-      linkLabel: "View details",
       href: "/dashboard/history",
     },
   ];
+
+  // Icon elements, not icon components, cross the server/client boundary here:
+  // a component reference is a function and Next.js can't serialize functions
+  // as Client Component props, but an already-rendered element is plain data.
+  const kpiCards: DashboardKpiCard[] = statCards.map((item, index) => {
+    const style = statCardStyles[index % statCardStyles.length];
+    const Icon = style.icon;
+
+    return {
+      key: item.key,
+      title: item.title,
+      value: item.value,
+      href: item.href,
+      icon: <Icon className="h-4 w-4" />,
+      art: style.art,
+      iconWrap: style.iconWrap,
+      card: style.card,
+      border: style.border,
+      accent: style.accent,
+    };
+  });
+
+  // Shared by the work plan section and the KPI cards' detail lists, so a task
+  // opened from either place reads the exact same fields.
+  const workPlanTasks = (data.tasks ?? []).map((task) => ({
+    id: task.id,
+    taskTitle: task.taskTitle,
+    taskDescription: task.taskDescription,
+    priority: task.priority,
+    planDate: toDateOnly(task.planDate),
+    assignedBy: task.assignedBy,
+    userId: task.userId,
+    departmentName: task.user.department?.name ?? "General",
+    createdAt: task.createdAt.toISOString(),
+    updates: (task.updates ?? []).map((update) => ({
+      status: update.status,
+      note: update.note,
+      trackedMinutes: update.trackedMinutes,
+      actualStart: update.actualStart?.toISOString() ?? null,
+      actualEnd: update.actualEnd?.toISOString() ?? null,
+      reportDate: toDateOnly(update.reportDate),
+      updatedAt: update.updatedAt.toISOString(),
+    })),
+    latestReview: task.editRequests[0]
+      ? {
+          id: task.editRequests[0].id,
+          status: task.editRequests[0].status as "pending" | "approved" | "rejected",
+          submitNote: extractAssignmentReviewReason(task.editRequests[0].reason) ?? "",
+          reviewNote: task.editRequests[0].reviewNote ?? null,
+          createdAt: task.editRequests[0].createdAt.toISOString(),
+          reviewedAt: task.editRequests[0].reviewedAt?.toISOString() ?? null,
+          requestedById: task.editRequests[0].requestedById,
+          reviewerId: task.editRequests[0].reviewerId ?? null,
+        }
+      : null,
+  }));
 
   return (
     <div
       className="flex flex-col gap-2 min-[900px]:min-h-0 min-[900px]:flex-1 min-[900px]:overflow-hidden"
       data-fit-viewport
     >
+      {/* Today's plan only. getDashboardData returns every task with
+          planDate <= today, so the raw list still carries days-old and archived
+          tasks — reading it is what put "You have 5 tasks to remember today" on
+          screen above an empty work plan. Status comes from today's report row
+          too, so a task left running last week no longer reports itself as
+          running this morning. */}
       <DashboardTaskNotifier
-        tasks={(data.tasks ?? []).map((task) => ({
-          id: task.id,
-          title: task.taskTitle,
-          status: task.updates[0]?.status ?? "pending",
-          trackedMinutes: task.updates[0]?.trackedMinutes ?? 0,
-          actualEnd: task.updates[0]?.actualEnd?.toISOString() ?? null,
-          taskDescription: task.taskDescription,
-        }))}
+        tasks={activeTasks.map((task) => {
+          const todaysUpdate = getTaskUpdateForDate(task);
+
+          return {
+            id: task.id,
+            title: task.taskTitle,
+            status: getTaskStatusForDashboard(task) as "done" | "in_progress" | "pending",
+            trackedMinutes: todaysUpdate?.trackedMinutes ?? 0,
+            actualEnd: todaysUpdate?.actualEnd?.toISOString() ?? null,
+            taskDescription: task.taskDescription,
+          };
+        })}
       />
       <section className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4" data-page-section>
         <div className="flex min-w-0 items-center gap-2.5 sm:flex-1">
@@ -314,182 +352,23 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid shrink-0 grid-cols-5 gap-1.5 sm:gap-2 xl:gap-2.5" data-page-section>
-        {statCards.map((item, index) => {
-          const style = statCardStyles[index % statCardStyles.length];
-          const Icon = style.icon;
-          const compactTitle = item.title
-            .replace(" Tasks", "")
-            .replace("Actual Work Time", "Work Time");
-          const compactLinkLabel = item.linkLabel === "View details" ? "Details" : "View";
-
-          return (
-            <Link
-              /* No drop shadow: the coloured 42px glow under each card read as a
-                 smudge on the background. The tinted border and the accent bar
-                 carry the separation on their own. */
-              className={`group relative flex min-w-0 items-center gap-2 overflow-hidden rounded-[0.875rem] border p-2 transition hover:-translate-y-0.5 sm:rounded-[1rem] sm:p-2.5 ${style.card} ${style.border}`}
-              data-dashboard-card
-              href={item.href}
-              key={item.title}
-              title={`${item.title} · ${item.linkLabel}`}
-            >
-              <div className={`absolute inset-x-0 top-0 h-1 ${style.accent}`} />
-              <div className="pointer-events-none absolute -right-1 bottom-0 top-1 w-[26%] opacity-90">
-                <Image
-                  alt=""
-                  aria-hidden
-                  className="object-contain object-right-bottom"
-                  data-dashboard-float="soft"
-                  fill
-                  sizes="120px"
-                  src={style.art}
-                />
-              </div>
-              <div className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.625rem] ${style.iconWrap}`}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="relative min-w-0 flex-1 pr-[22%]">
-                <p className="truncate text-[1.25rem] font-bold leading-none tabular-nums text-slate-900">{item.value}</p>
-                <p className="mt-0.5 truncate text-[0.68rem] font-semibold leading-tight text-slate-600">
-                  <span className="sm:hidden">{compactTitle}</span>
-                  <span className="hidden sm:inline">{item.title}</span>
-                </p>
-                <p className="mt-0.5 truncate text-[0.6rem] font-bold uppercase tracking-[0.1em] text-slate-500 transition group-hover:text-[#4f5ef7]">
-                  <span className="sm:hidden">{compactLinkLabel}</span>
-                  <span className="hidden sm:inline">{item.linkLabel}</span>
-                </p>
-              </div>
-            </Link>
-          );
-        })}
-      </section>
+      <DashboardKpiCards cards={kpiCards} currentUserId={user.id} tasks={workPlanTasks} />
 
       <section
         className="grid min-h-0 gap-2 min-[900px]:flex-1 min-[900px]:grid-cols-[minmax(0,1fr)_15.5rem] lg:grid-cols-[minmax(0,1fr)_18.125rem]"
         data-page-section
       >
-        {/* Left column: the work plan owns the leftover height and scrolls
-            inside itself, so the page never grows past one screen. */}
+        {/* Left column: the work plan owns the whole column and splits into
+            today's open tasks and the completed ones; each half scrolls inside
+            itself, so the page never grows past one screen. */}
         <div className="flex min-h-0 min-w-0 flex-col gap-2">
           <DashboardWorkPlanSection
             attendanceRunning={Boolean(attendance?.checkInAt && !attendance?.checkOutAt)}
             canEdit={editAccess.allowed}
             currentUserId={user.id}
             formattedDate={formatDashboardDate(today)}
-            tasks={(data.tasks ?? []).map((task) => ({
-              id: task.id,
-              taskTitle: task.taskTitle,
-              taskDescription: task.taskDescription,
-              priority: task.priority,
-              planDate: toDateOnly(task.planDate),
-              assignedBy: task.assignedBy,
-              userId: task.userId,
-              departmentName: task.user.department?.name ?? "General",
-              updates: (task.updates ?? []).map((update) => ({
-                status: update.status,
-                note: update.note,
-                trackedMinutes: update.trackedMinutes,
-                actualStart: update.actualStart?.toISOString() ?? null,
-                actualEnd: update.actualEnd?.toISOString() ?? null,
-                reportDate: toDateOnly(update.reportDate),
-              })),
-              latestReview: task.editRequests[0]
-                ? {
-                    id: task.editRequests[0].id,
-                    status: task.editRequests[0].status as "pending" | "approved" | "rejected",
-                    submitNote: extractAssignmentReviewReason(task.editRequests[0].reason) ?? "",
-                    reviewNote: task.editRequests[0].reviewNote ?? null,
-                    createdAt: task.editRequests[0].createdAt.toISOString(),
-                    reviewedAt: task.editRequests[0].reviewedAt?.toISOString() ?? null,
-                    requestedById: task.editRequests[0].requestedById,
-                    reviewerId: task.editRequests[0].reviewerId ?? null,
-                  }
-                : null,
-            }))}
+            tasks={workPlanTasks}
           />
-
-          {/* Support strip: fixed height, each panel scrolls inside itself so
-              the row never pushes the page past one screen. */}
-          {/* Takes whatever the fixed-height work plan leaves, so these three
-              breathe instead of scrolling inside a cramped strip. */}
-          <div className="grid min-h-0 min-w-0 gap-2 min-[900px]:flex-1 min-[900px]:grid-cols-3">
-            <DashboardRecurringQuickAdd
-              allowOtherDepartment={user.role === "admin"}
-              currentUserDepartmentId={user.departmentId || departments[0]?.id || ""}
-              isTenderDepartment={isTenderDepartment}
-              currentUserId={user.id}
-              departments={departments ?? []}
-              existingTaskTitles={(activeTasks ?? []).map((task) => task.taskTitle)}
-            />
-
-            <div
-              className="dashboard-accent accent-rose flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
-              data-dashboard-panel
-            >
-              <PanelHeader icon={CircleAlert} title="High Priority" tone="bg-rose-500/10 text-rose-500" />
-              <div className="dashboard-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-1.5 pr-0.5">
-                {urgentTasks.length ? (
-                  urgentTasks.map((task) => (
-                    <div
-                      /* Rows share the list's height instead of stacking at the
-                         top, so a taller screen fills the panel rather than
-                         leaving a dead band under the last row. min-h keeps them
-                         from squashing once there are enough rows to scroll. */
-                      className="flex min-h-[1.75rem] flex-1 items-center gap-2 rounded-lg border border-[var(--panel-border)] bg-[var(--panel-muted)] px-2 transition hover:border-rose-500/40 hover:bg-rose-500/5"
-                      key={task.id}
-                      title={`${task.taskTitle} · ${task.user.department?.name ?? "General"}`}
-                    >
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
-                      <p className="min-w-0 flex-1 truncate text-[0.76rem] font-semibold text-[var(--foreground)]">{task.taskTitle}</p>
-                      <span className="shrink-0 rounded-full bg-rose-500/10 px-1.5 py-px text-[0.55rem] font-bold uppercase tracking-[0.1em] text-rose-500">
-                        High
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--panel-border)] bg-[var(--panel-muted)] px-3 py-4 text-center">
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
-                      <CheckCircle2 className="h-4 w-4" />
-                    </span>
-                    <p className="text-[0.8rem] font-medium text-[var(--muted-foreground)]">No high-priority tasks right now.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div
-              className="dashboard-accent accent-amber flex h-full min-h-0 min-w-0 flex-col rounded-[1.25rem] border border-[var(--panel-border)] bg-[var(--panel)] p-2.5"
-              data-dashboard-panel
-            >
-              <PanelHeader
-                action={
-                  <Link className="text-[0.7rem] font-semibold text-[#4f5ef7] transition hover:text-[#3f4ede]" href="/dashboard/help">
-                    View all
-                  </Link>
-                }
-                icon={BellRing}
-                title="Notices"
-                tone="bg-amber-500/10 text-amber-500"
-              />
-              {/* Same gap as High Priority: these two panels sit side by side, so
-                  a different row rhythm reads as a misalignment between them. */}
-              <div className="dashboard-scroll-area mt-2 flex min-h-0 flex-1 flex-col gap-1.5 pr-0.5">
-                {notices.map((notice, index) => (
-                  <div
-                    className="flex min-h-[1.75rem] flex-1 items-center gap-2 rounded-lg px-1.5 transition hover:bg-[var(--panel-muted)]"
-                    key={notice}
-                    title={notice}
-                  >
-                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-amber-500/12 font-mono text-[0.55rem] font-bold tabular-nums text-amber-600">
-                      {index + 1}
-                    </span>
-                    <p className="min-w-0 flex-1 truncate text-[0.76rem] font-medium text-[var(--foreground)]">{notice}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Right column: three fixed-size widgets sized to fit the single screen,
@@ -517,6 +396,12 @@ export default async function DashboardPage() {
               id: task.id,
               trackedMinutes: task.updates[0]?.trackedMinutes ?? 0,
             }))}
+            attendance={attendance ? {
+              status: attendance.status,
+              checkInAt: attendance.checkInAt?.toISOString() ?? null,
+              checkOutAt: attendance.checkOutAt?.toISOString() ?? null,
+              breakMinutes: attendance.breakMinutes ?? 0,
+            } : null}
           />
 
           <div

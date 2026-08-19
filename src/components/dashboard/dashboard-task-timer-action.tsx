@@ -500,33 +500,9 @@ export function DashboardTaskTimerAction({
     onDoneClick();
   }
 
-  useEffect(() => {
-    if (!runningStartedAt || now === null || saving || autoStoppingRef.current) {
-      return;
-    }
-
-    const sessionStartedAt = new Date(runningStartedAt).getTime();
-    if (Number.isNaN(sessionStartedAt)) {
-      return;
-    }
-
-    const regularCutoffIso = getDhakaCutoffIso(reportDate, 19, 30);
-    const overtimeCutoffIso = getDhakaCutoffIso(reportDate, 22, 0);
-    const regularCutoffAt = new Date(regularCutoffIso).getTime();
-    const overtimeCutoffAt = new Date(overtimeCutoffIso).getTime();
-    const isOvertimeSession = sessionStartedAt >= regularCutoffAt;
-
-    if (!isOvertimeSession && now >= regularCutoffAt) {
-      autoStoppingRef.current = true;
-      void stopTimerAt(regularCutoffIso, "Task session auto-stopped at 7:30 PM.");
-      return;
-    }
-
-    if (isOvertimeSession && now >= overtimeCutoffAt) {
-      autoStoppingRef.current = true;
-      void stopTimerAt(overtimeCutoffIso, "Overtime session auto-stopped at 10:00 PM.");
-    }
-  }, [actualStart, liveTrackedSeconds, now, reportDate, runningStartedAt, saving, trackedSecondsBase]);
+  // Clock-based auto-stop removed: timers now stop only on manual action (pause/done)
+  // or app close. The 7:30 PM cutoff is handled as crash-recovery only in
+  // TaskTimerAutoCloser (30s sweep), not as a live clock check here.
 
   useEffect(() => {
     // Nothing to stop, and no listener to leak, when this task is not counting.
@@ -554,14 +530,18 @@ export function DashboardTaskTimerAction({
   }, [runningStartedAt, saving]);
 
   const buttonClass = compact
-    ? "button-force-white !text-white [&_svg]:!text-white h-8 min-w-[3.875rem] shrink-0 justify-center rounded-full px-2 text-[0.625rem] font-semibold tracking-[0.01em] transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:scale-100 min-[420px]:min-w-[4.5rem] min-[420px]:px-2.5 min-[420px]:text-[0.6875rem] min-[560px]:min-w-[5.25rem] min-[560px]:px-3 min-[560px]:text-xs"
-    : "button-force-white !text-white [&_svg]:!text-white h-9 min-w-[5.75rem] justify-center rounded-full px-3.5 text-sm font-semibold tracking-[0.01em] transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:scale-100";
-  const startButtonClass = `${buttonClass} border border-white/20 bg-gradient-to-r from-[#06b6d4] via-[#14b8a6] to-[#22c55e] shadow-[0_12px_30px_rgba(6,182,212,0.34)] hover:from-[#0ea5e9] hover:via-[#06b6d4] hover:to-[#10b981] hover:shadow-[0_16px_34px_rgba(8,145,178,0.42)]`;
-  const pauseButtonClass = `${buttonClass} border border-white/20 bg-gradient-to-r from-[#f59e0b] via-[#f97316] to-[#fb7185] shadow-[0_12px_30px_rgba(249,115,22,0.32)] hover:from-[#d97706] hover:via-[#ea580c] hover:to-[#f43f5e] hover:shadow-[0_16px_34px_rgba(234,88,12,0.42)]`;
-  const doneButtonClass = `${buttonClass} border border-white/20 bg-gradient-to-r from-[#7c3aed] via-[#8b5cf6] to-[#ec4899] shadow-[0_12px_30px_rgba(168,85,247,0.3)] hover:from-[#6d28d9] hover:via-[#7c3aed] hover:to-[#db2777] hover:shadow-[0_16px_34px_rgba(168,85,247,0.42)] disabled:from-[#94a3b8] disabled:to-[#94a3b8] disabled:shadow-none`;
+    ? "h-6 min-w-[3rem] shrink-0 justify-center rounded-md border px-1.5 text-[0.5rem] font-semibold transition-colors duration-200 min-[420px]:min-w-[3.25rem] min-[420px]:px-2 min-[420px]:text-[0.5625rem] min-[560px]:min-w-[3.5rem] min-[560px]:px-2.5 min-[560px]:text-[0.625rem]"
+    : "h-7 min-w-[5rem] justify-center rounded-md border px-2.5 text-xs font-semibold transition-colors duration-200";
+  // Soft fills, not solid colour: a light tint plus solid text, the same
+  // convention the chips use, so the row reads calmly instead of shouting.
+  // Start is green (go), Pause is amber (hold), Done is the app's own brand
+  // indigo (the primary action on the row).
+  const startButtonClass = `${buttonClass} task-btn-go`;
+  const pauseButtonClass = `${buttonClass} task-btn-hold`;
+  const doneButtonClass = `${buttonClass} task-btn-primary`;
 
   return (
-    <div className={compact ? "flex w-full min-w-0 max-w-full flex-col gap-1.5" : "flex min-w-[10.625rem] flex-col gap-2"}>
+    <div className={compact ? "flex w-full min-w-0 max-w-full flex-col gap-1" : "flex min-w-[10.625rem] flex-col gap-2"}>
       <div className={compact ? "flex min-w-0 flex-wrap items-center gap-1" : "flex flex-wrap items-center gap-1.5"}>
         {/* Pause takes Start's place while running rather than sitting beside it:
             the two are never usable at the same time, and the row has no width to
@@ -572,7 +552,7 @@ export function DashboardTaskTimerAction({
             disabled={!canPause}
             onClick={pauseTimer}
             type="button"
-            variant="default"
+            variant="ghost"
           >
             <Pause className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
             Pause
@@ -585,7 +565,7 @@ export function DashboardTaskTimerAction({
             // A disabled button with no reason is a dead end; say why on hover.
             title={attendanceBlocksStart ? "Check in first — the workday timer is stopped." : undefined}
             type="button"
-            variant="default"
+            variant="ghost"
           >
             <Play className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
             {shouldShowResumeLabel ? "Resume" : "Start"}
@@ -597,7 +577,7 @@ export function DashboardTaskTimerAction({
             disabled={!canDone}
             onClick={handleDoneClick}
             type="button"
-            variant="default"
+            variant="ghost"
           >
             Done
           </Button>
@@ -608,20 +588,20 @@ export function DashboardTaskTimerAction({
         /* Elapsed, start and end on one line. The elapsed chip sizes to its own
            text (auto) and the two fields split what is left, so the row holds
            together without the chip stealing a line of its own. */
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5">
-          <span className="inline-flex shrink-0 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2 py-1 text-[0.625rem] font-semibold tabular-nums text-slate-600">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-center gap-1">
+          <span className="inline-flex shrink-0 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[0.5rem] font-semibold tabular-nums text-slate-600">
             <Timer className="h-3 w-3 text-[#4f5ef7]" />
             {formatDuration(liveTrackedSeconds)}
           </span>
           <Input
-            className="h-7 min-w-0 px-2 text-[0.6875rem]"
+            className="h-6 min-w-0 border rounded-md border-slate-200 px-2 text-[0.5625rem] bg-white text-slate-600"
             disabled={!canEdit || saving || Boolean(runningStartedAt)}
             onChange={(event) => patchClockTime("actualStart", event.target.value)}
             type="time"
             value={startClockValue}
           />
           <Input
-            className="h-7 min-w-0 px-2 text-[0.6875rem]"
+            className="h-6 min-w-0 border rounded-md border-slate-200 px-2 text-[0.5625rem] bg-white text-slate-600"
             disabled={!canEdit || saving || Boolean(runningStartedAt) || !actualStart}
             onChange={(event) => patchClockTime("actualEnd", event.target.value)}
             type="time"
@@ -630,7 +610,7 @@ export function DashboardTaskTimerAction({
         </div>
       ) : (
         <>
-          <span className="inline-flex items-center justify-center gap-1 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold tabular-nums text-slate-600">
+          <span className="inline-flex items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[0.625rem] font-semibold tabular-nums text-slate-600">
             <Timer className="h-3.5 w-3.5 text-[#4f5ef7]" />
             {formatDuration(liveTrackedSeconds)}
           </span>

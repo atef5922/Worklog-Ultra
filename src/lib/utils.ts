@@ -33,7 +33,7 @@ export function formatHours(minutes: number) {
 }
 
 export const STANDARD_WORK_DAYS_PER_WEEK = 6;
-export const STANDARD_DAILY_HOURS = 8;
+export const STANDARD_DAILY_HOURS = 9;
 export const STANDARD_WORK_DAYS_PER_MONTH = 26;
 export const WORKLOG_TIME_ZONE = "Asia/Dhaka";
 const DHAKA_OFFSET = "+06:00";

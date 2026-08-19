@@ -4,17 +4,29 @@ import { Timer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PanelHeader } from "@/components/dashboard/panel-header";
 import { readTaskTimerSnapshot } from "@/lib/task-timer-storage";
-import { parseDhakaDateTime, toDateOnly } from "@/lib/utils";
+import { parseDhakaDateTime, toDateOnly, STANDARD_DAILY_HOURS } from "@/lib/utils";
 
 type TimeSummaryTask = {
   id: string;
   trackedMinutes: number;
 };
 
-const OFFICE_START_HOUR = 10;
-const OFFICE_END_HOUR = 19;
-const OFFICE_END_MINUTE = 30;
-const DEFAULT_BREAK_MINUTES = 30;
+type AttendanceSnapshot = {
+  status: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  breakMinutes: number;
+};
+
+const DEFAULT_BREAK_MINUTES = 45;
+
+function formatDurationWithSeconds(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+}
 
 function formatDurationFromMinutes(totalMinutes: number) {
   const safeMinutes = Math.max(0, totalMinutes);
@@ -36,70 +48,86 @@ function calculateElapsedSecondsSince(value: string, now: number) {
   return Math.floor((now - parsedStart.getTime()) / 1000);
 }
 
-function calculateOfficeTargetMinutes() {
-  const officeWindowMinutes =
-    (OFFICE_END_HOUR * 60 + OFFICE_END_MINUTE) - OFFICE_START_HOUR * 60;
-
-  return Math.max(0, officeWindowMinutes - DEFAULT_BREAK_MINUTES);
-}
-
 export function DashboardTimeSummary({
   plannedTasks,
   tasks,
+  attendance,
 }: {
   plannedTasks: number;
   tasks: TimeSummaryTask[];
+  attendance?: AttendanceSnapshot | null;
 }) {
   const [now, setNow] = useState<number | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const reportDate = useMemo(() => toDateOnly(), []);
 
   useEffect(() => {
-    setHydrated(true);
     setNow(Date.now());
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    setHydrated(true);
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 100); // Update every 100ms for smooth seconds counting
     return () => window.clearInterval(interval);
   }, []);
 
-  const targetMinutes = calculateOfficeTargetMinutes();
-
-  const actualWorkedMinutes = useMemo(() => {
-    if (!hydrated || now === null) {
-      return tasks.reduce((sum, task) => sum + task.trackedMinutes, 0);
+  // Calculate work time and break time with live seconds
+  // If attendance is completed (checked out), show reset state for next day
+  const { totalWorkSeconds, breakMinutes } = useMemo(() => {
+    if (!attendance?.checkInAt || now === null) {
+      return { totalWorkSeconds: 0, breakMinutes: 0 };
     }
 
-    return tasks.reduce((sum, task) => {
-      const snapshot = readTaskTimerSnapshot(reportDate, task.id);
+    // If checked out, reset for next day (don't show old session data)
+    if (attendance.checkOutAt) {
+      return { totalWorkSeconds: 0, breakMinutes: 0 };
+    }
 
-      if (!snapshot) {
-        return sum + task.trackedMinutes;
-      }
+    // Work time: check-in to now (only if still running)
+    const checkInParsed = parseDhakaDateTime(attendance.checkInAt);
+    if (!checkInParsed || !Number.isFinite(checkInParsed.getTime())) {
+      return { totalWorkSeconds: 0, breakMinutes: 0 };
+    }
 
-      const baseSeconds = Number(snapshot.trackedSeconds ?? String(Number(snapshot.trackedMinutes || 0) * 60));
-      const runningExtraSeconds =
-        snapshot.runningStartedAt && !Number.isNaN(new Date(snapshot.runningStartedAt).getTime())
-          ? Math.max(0, Math.floor((now - new Date(snapshot.runningStartedAt).getTime()) / 1000))
-          : 0;
-      const sessionSeconds = baseSeconds + runningExtraSeconds;
-      const manualElapsedSeconds =
-        snapshot.runningStartedAt && snapshot.actualStart
-          ? calculateElapsedSecondsSince(snapshot.actualStart, now)
-          : null;
+    const checkInTime = checkInParsed.getTime();
+    if (!Number.isFinite(checkInTime) || checkInTime > now) {
+      return { totalWorkSeconds: 0, breakMinutes: 0 };
+    }
 
-      return sum + Math.floor(Math.max(sessionSeconds, manualElapsedSeconds ?? 0) / 60);
-    }, 0);
-  }, [hydrated, now, reportDate, tasks]);
+    // Calculate elapsed seconds with proper rounding
+    const elapsedSeconds = Math.max(0, Math.floor((now - checkInTime) / 1000));
+    const breakMins = Math.max(0, attendance.breakMinutes ?? 0);
 
-  const remainingMinutes = Math.max(targetMinutes - actualWorkedMinutes, 0);
+    return {
+      totalWorkSeconds: elapsedSeconds,
+      breakMinutes: breakMins,
+    };
+  }, [now, attendance]);
+
+  // Calculate actual productive time with unlimited break model
+  // Standard break: 45 min (always deducted)
+  // Extra break: tracked separately, not deducted from work time
+  const standardBreakMinutes = 45;
+  const breakDeductedMinutes = Math.min(breakMinutes, standardBreakMinutes);
+  const overBreakMinutes = Math.max(0, breakMinutes - standardBreakMinutes);
+
+  const breakDeductedSeconds = breakDeductedMinutes * 60;
+  const actualProductiveSeconds = Math.max(0, totalWorkSeconds - breakDeductedSeconds);
+  const plannedWorkSeconds = STANDARD_DAILY_HOURS * 3600;
+  const remainingSeconds = Math.max(0, plannedWorkSeconds - actualProductiveSeconds);
+
+  const breakDisplayValue = overBreakMinutes > 0
+    ? `${breakMinutes}m (${standardBreakMinutes}m std + ${overBreakMinutes}m over)`
+    : `${breakMinutes}m / ${DEFAULT_BREAK_MINUTES}m`;
 
   const items = [
-    { label: "Planned Work Time", value: formatDurationFromMinutes(targetMinutes) },
-    { label: "Actual Work Time", value: formatDurationFromMinutes(actualWorkedMinutes) },
-    { label: "Break Time", value: formatDurationFromMinutes(DEFAULT_BREAK_MINUTES) },
-    { label: "Remaining Time", value: formatDurationFromMinutes(remainingMinutes) },
+    { label: "Planned Work Time", value: formatDurationFromMinutes(Math.floor(plannedWorkSeconds / 60)) },
+    { label: "Work Time (Total)", value: formatDurationWithSeconds(totalWorkSeconds) },
+    { label: "Break Time", value: breakDisplayValue },
+    { label: "Actual Work Time", value: formatDurationWithSeconds(actualProductiveSeconds) },
+    { label: "Remaining Time", value: formatDurationWithSeconds(remainingSeconds) },
   ];
 
-  const completionPercent = targetMinutes ? Math.min(100, Math.round((actualWorkedMinutes / targetMinutes) * 100)) : 0;
+  const completionPercent = plannedWorkSeconds ? Math.min(100, Math.round((actualProductiveSeconds / plannedWorkSeconds) * 100)) : 0;
 
   return (
     <div
