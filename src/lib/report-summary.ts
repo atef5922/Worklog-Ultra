@@ -1,7 +1,8 @@
 import { stripHistoryMeta } from "@/lib/task-history-shared";
-import { stripContinuationMeta } from "@/lib/task-continuation";
-import { stripFollowUpMeta } from "@/lib/task-follow-up";
+import { buildContinuationOverview, extractContinuationMeta, stripContinuationMeta, type ContinuationOverview } from "@/lib/task-continuation";
+import { extractFollowUpMeta, stripFollowUpMeta } from "@/lib/task-follow-up";
 import { stripRecurringTaskMeta } from "@/lib/recurring-task-templates";
+import { stripReopenMeta } from "@/lib/task-reopen";
 import { formatMinutes, toDateOnly } from "@/lib/utils";
 
 const AUTO_PREDICTION_TEXT = /^Predicted from your work pattern and completion history\.?\s*/i;
@@ -21,6 +22,8 @@ export type TaskReportLike = {
   id: string;
   taskTitle: string;
   taskDescription?: string | null;
+  priority?: string | null;
+  assignedBy?: string | null;
   planDate: Date | string;
   department?: {
     name?: string | null;
@@ -38,8 +41,14 @@ export type ReportSummaryItem = {
   trackedMinutes: number;
   completionPercent: number;
   note: string;
-  actualStart: Date | string | null;
-  actualEnd: Date | string | null;
+  actualStart: string | null;
+  actualEnd: string | null;
+  priority: string;
+  isFollowUp: boolean;
+  isContinued: boolean;
+  isAssigned: boolean;
+  /** Present only when this task has been carried forward across multiple days. */
+  continuation: ContinuationOverview | null;
 };
 
 function getSortableTimestamp(value?: Date | string | null) {
@@ -52,10 +61,12 @@ function getSortableTimestamp(value?: Date | string | null) {
 }
 
 export function getReadableTaskDescription(description?: string | null) {
-  return stripHistoryMeta(
-    stripRecurringTaskMeta(
-      stripFollowUpMeta(
-        stripContinuationMeta(description),
+  return stripReopenMeta(
+    stripHistoryMeta(
+      stripRecurringTaskMeta(
+        stripFollowUpMeta(
+          stripContinuationMeta(description),
+        ),
       ),
     ),
   )
@@ -64,38 +75,77 @@ export function getReadableTaskDescription(description?: string | null) {
     .trim();
 }
 
-export function getLatestTaskUpdate(task: TaskReportLike) {
-  const updates = [...(task.updates ?? [])];
-  updates.sort(
-    (left, right) =>
-      getSortableTimestamp(right.reportDate ?? right.updatedAt) -
-      getSortableTimestamp(left.reportDate ?? left.updatedAt),
-  );
+function toIsoOrNull(value?: Date | string | null) {
+  if (!value) {
+    return null;
+  }
 
-  return updates[0] ?? null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+/**
+ * One report row per update, not per task.
+ *
+ * A task the dashboard carried forward while it was still open (see
+ * isVisibleInTodaysWorkPlan) keeps the same task row across every day it was
+ * worked on, picking up a new dailyTaskUpdate row each day rather than a new
+ * task. Reading only getLatestTaskUpdate() therefore quietly dropped every
+ * earlier day's tracked time and note the moment a later day's update
+ * existed — the same task looked like it had only ever been worked on once,
+ * on its most recent day. A task with a single update (still the normal
+ * case) still produces exactly one row, unchanged; a task with none yet
+ * produces one placeholder row so a freshly planned, untouched task still
+ * appears.
+ */
 export function buildReportSummary(tasks: TaskReportLike[]) {
-  const items: ReportSummaryItem[] = tasks.map((task) => {
-    const latestUpdate = getLatestTaskUpdate(task);
-    const status = latestUpdate?.status;
+  const items: ReportSummaryItem[] = tasks.flatMap((task) => {
+    const updates = [...(task.updates ?? [])].sort(
+      (left, right) =>
+        getSortableTimestamp(right.reportDate ?? right.updatedAt) -
+        getSortableTimestamp(left.reportDate ?? left.updatedAt),
+    );
+    const rows = updates.length ? updates : [null];
+    const planDate = toDateOnly(task.planDate);
 
-    return {
-      id: task.id,
-      date: toDateOnly(task.planDate),
-      title: task.taskTitle,
-      description: getReadableTaskDescription(task.taskDescription),
-      departmentName: task.department?.name ?? "General",
-      status:
-        status === "done" || status === "in_progress" || status === "pending"
-          ? status
-          : "pending",
-      trackedMinutes: Math.max(0, Number(latestUpdate?.trackedMinutes ?? 0)),
-      completionPercent: Math.max(0, Number(latestUpdate?.completionPercent ?? 0)),
-      note: latestUpdate?.note?.trim() ?? "",
-      actualStart: latestUpdate?.actualStart ?? null,
-      actualEnd: latestUpdate?.actualEnd ?? null,
-    };
+    return rows.map((update, index) => {
+      const status = update?.status;
+      const entryDate = update?.reportDate ? toDateOnly(update.reportDate) : planDate;
+      const completionPercent = Math.max(0, Number(update?.completionPercent ?? 0));
+      const trackedMinutes = Math.max(0, Number(update?.trackedMinutes ?? 0));
+      const note = update?.note?.trim() ?? "";
+
+      return {
+        // Only the multi-day case needs a composite key; a single-update task
+        // keeps its plain task id so nothing downstream that assumed a 1:1
+        // mapping (there is none left, but better safe) notices a change.
+        id: rows.length > 1 ? `${task.id}:${entryDate}:${index}` : task.id,
+        date: entryDate,
+        title: task.taskTitle,
+        description: getReadableTaskDescription(task.taskDescription),
+        departmentName: task.department?.name ?? "General",
+        status:
+          status === "done" || status === "in_progress" || status === "pending"
+            ? status
+            : "pending",
+        trackedMinutes,
+        completionPercent,
+        note,
+        actualStart: toIsoOrNull(update?.actualStart),
+        actualEnd: toIsoOrNull(update?.actualEnd),
+        priority: task.priority ?? "normal",
+        isFollowUp: Boolean(extractFollowUpMeta(task.taskDescription)),
+        isContinued: Boolean(extractContinuationMeta(task.taskDescription)),
+        isAssigned: Boolean(task.assignedBy),
+        continuation: buildContinuationOverview({
+          taskDescription: task.taskDescription,
+          currentDate: entryDate,
+          currentProgress: completionPercent,
+          currentTrackedMinutes: trackedMinutes,
+          currentNote: note,
+        }),
+      };
+    });
   });
 
   const totalTrackedMinutes = items.reduce((sum, item) => sum + item.trackedMinutes, 0);

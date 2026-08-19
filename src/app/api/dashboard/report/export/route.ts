@@ -1,17 +1,10 @@
+import ExcelJS from "exceljs";
 import { NextRequest, NextResponse } from "next/server";
 import { requireEmployee } from "@/lib/auth/server";
-import { buildReportSummary } from "@/lib/report-summary";
+import { buildReportSummary, type ReportSummaryItem } from "@/lib/report-summary";
 import { getHistoryData } from "@/lib/worklog";
-import { formatDateTimeInDhaka, formatMinutes, toDateOnly } from "@/lib/utils";
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import { toDateOnly, STANDARD_DAILY_HOURS } from "@/lib/utils";
+import { db } from "@/lib/db";
 
 function formatRangeDate(value: string) {
   return new Intl.DateTimeFormat("en-BD", {
@@ -46,460 +39,857 @@ function slugify(value: string) {
   );
 }
 
+function formatDateTimeInDhaka(value: Date) {
+  return new Intl.DateTimeFormat("en-BD", {
+    timeZone: "Asia/Dhaka",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
+}
+
+/** Clock time in Dhaka, or a dash placeholder when the moment is missing. */
+function clockInDhaka(value: string | null | undefined) {
+  if (!value) {
+    return "--:--";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "--:--";
+  }
+
+  return new Intl.DateTimeFormat("en-BD", {
+    timeZone: "Asia/Dhaka",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed);
+}
+
+/** "9h 05m" from a raw minute count, so every duration in the book reads alike. */
+function formatMinutes(totalMinutes: number) {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  return `${Math.floor(safe / 60)}h ${String(safe % 60).padStart(2, "0")}m`;
+}
+
+/** Weekday + day/month, the label a reader scans for when flipping through days. */
+function formatDayLabel(value: string) {
+  const parsed = new Date(`${value}T00:00:00+06:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-BD", {
+    timeZone: "Asia/Dhaka",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(parsed);
+}
+
+type AttendanceDay = {
+  date: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  breakMinutes: number;
+};
+
+type AttendanceMetrics = {
+  grossMinutes: number;
+  breakMinutes: number;
+  netMinutes: number;
+  overtimeMinutes: number;
+  status: "Present" | "Open session" | "Absent";
+};
+
+/**
+ * One day's attendance reduced to the numbers the report actually reports on.
+ *
+ * Gross is the raw check-in→check-out span, net subtracts the break, and
+ * overtime is whatever net runs past the STANDARD_DAILY_HOURS baseline — the
+ * same 9-hour baseline the dashboard's Time Summary counts against, so the
+ * spreadsheet and the app never disagree.
+ */
+function measureAttendanceDay(attendance: AttendanceDay | undefined): AttendanceMetrics {
+  if (!attendance?.checkInAt) {
+    return { grossMinutes: 0, breakMinutes: 0, netMinutes: 0, overtimeMinutes: 0, status: "Absent" };
+  }
+
+  const breakMinutes = Math.max(0, attendance.breakMinutes ?? 0);
+  const checkIn = new Date(attendance.checkInAt).getTime();
+  const checkOut = attendance.checkOutAt ? new Date(attendance.checkOutAt).getTime() : Number.NaN;
+
+  if (!Number.isFinite(checkOut) || checkOut < checkIn) {
+    // Checked in and never checked out: the span is unknowable, so only the
+    // break (a recorded fact) carries over and the day is flagged as open.
+    return { grossMinutes: 0, breakMinutes, netMinutes: 0, overtimeMinutes: 0, status: "Open session" };
+  }
+
+  const grossMinutes = Math.max(0, Math.round((checkOut - checkIn) / 60000));
+  const netMinutes = Math.max(0, grossMinutes - breakMinutes);
+  const overtimeMinutes = Math.max(0, netMinutes - STANDARD_DAILY_HOURS * 60);
+
+  return { grossMinutes, breakMinutes, netMinutes, overtimeMinutes, status: "Present" };
+}
+
+type AttendanceTotals = {
+  daysInRange: number;
+  daysPresent: number;
+  daysAbsent: number;
+  openSessions: number;
+  netMinutes: number;
+  breakMinutes: number;
+  overtimeMinutes: number;
+  averageNetMinutes: number;
+};
+
+/** Roll the per-day attendance metrics up into the figures the cover page reports. */
+function summariseAttendance(attendanceData: AttendanceDay[], daysInRange: number): AttendanceTotals {
+  const measured = attendanceData.map((entry) => measureAttendanceDay(entry));
+  const present = measured.filter((entry) => entry.status === "Present");
+  const openSessions = measured.filter((entry) => entry.status === "Open session").length;
+  const netMinutes = measured.reduce((total, entry) => total + entry.netMinutes, 0);
+
+  return {
+    daysInRange,
+    daysPresent: present.length,
+    // Only days with no check-in at all count as absent; an unclosed session
+    // is reported separately so it never masquerades as a missed day.
+    daysAbsent: Math.max(0, daysInRange - present.length - openSessions),
+    openSessions,
+    netMinutes,
+    breakMinutes: measured.reduce((total, entry) => total + entry.breakMinutes, 0),
+    overtimeMinutes: measured.reduce((total, entry) => total + entry.overtimeMinutes, 0),
+    averageNetMinutes: present.length ? Math.round(netMinutes / present.length) : 0,
+  };
+}
+
+/** Every calendar day in the requested range, so a zero-activity day still gets a row. */
+function listDatesInRange(from: string, to: string) {
+  const dates: string[] = [];
+  const cursor = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) {
+    return dates;
+  }
+
+  // A month-long range is 31 iterations; the guard is only here so a malformed
+  // range can never spin forever.
+  while (cursor <= end && dates.length < 400) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return dates;
+}
+
+const BRAND_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F5EF7" } };
+const HEADER_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+const TITLE_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: "FFFFFFFF" }, size: 16 };
+const THIN_BORDER: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FFDBE4FF" } },
+  left: { style: "thin", color: { argb: "FFDBE4FF" } },
+  bottom: { style: "thin", color: { argb: "FFDBE4FF" } },
+  right: { style: "thin", color: { argb: "FFDBE4FF" } },
+};
+
+const STATUS_FILL: Record<ReportSummaryItem["status"], string> = {
+  done: "FFD1FAE5",
+  in_progress: "FFDBEAFE",
+  pending: "FFFEF3C7",
+};
+
+const STATUS_FONT_COLOR: Record<ReportSummaryItem["status"], string> = {
+  done: "FF065F46",
+  in_progress: "FF1D4ED8",
+  pending: "FF92400E",
+};
+
+function styleHeaderRow(row: ExcelJS.Row) {
+  row.eachCell((cell) => {
+    cell.font = HEADER_FONT;
+    cell.fill = BRAND_FILL;
+    cell.border = THIN_BORDER;
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  });
+  row.height = 22;
+}
+
+function addCoverSheet(
+  workbook: ExcelJS.Workbook,
+  input: {
+    employeeName: string;
+    employeeRole: string;
+    rangeLabel: string;
+    generatedAt: string;
+    totals: ReturnType<typeof buildReportSummary>["totals"];
+    attendance: AttendanceTotals;
+  },
+) {
+  const sheet = workbook.addWorksheet("Cover", { views: [{ showGridLines: false }] });
+  sheet.columns = [{ width: 22 }, { width: 42 }];
+
+  sheet.mergeCells("A1:B1");
+  const titleCell = sheet.getCell("A1");
+  titleCell.value = "WorkLog Ultra — Employee Work Report";
+  titleCell.font = TITLE_FONT;
+  titleCell.fill = BRAND_FILL;
+  titleCell.alignment = { vertical: "middle", horizontal: "left" };
+  sheet.getRow(1).height = 32;
+
+  const infoRows: Array<[string, string]> = [
+    ["Employee", input.employeeName],
+    ["Role", input.employeeRole],
+    ["Date range", input.rangeLabel],
+    ["Generated", input.generatedAt],
+  ];
+
+  infoRows.forEach(([label, value], index) => {
+    const rowNumber = index + 3;
+    const labelCell = sheet.getCell(`A${rowNumber}`);
+    const valueCell = sheet.getCell(`B${rowNumber}`);
+    labelCell.value = label;
+    labelCell.font = { bold: true, color: { argb: "FF47597C" } };
+    valueCell.value = value;
+  });
+
+  let cursor = infoRows.length + 4;
+
+  // Two stacked blocks rather than one long list: a reader looking for hours
+  // should not have to scan past task counts to find them.
+  const blocks: Array<{ heading: string; rows: Array<[string, string | number]> }> = [
+    {
+      heading: "Work output",
+      rows: [
+        ["Total task entries", input.totals.totalTasks],
+        ["Completed", input.totals.completedTasks],
+        ["In progress", input.totals.inProgressTasks],
+        ["Pending", input.totals.pendingTasks],
+        ["Tracked time", input.totals.totalTrackedLabel],
+        ["Tracked minutes", input.totals.totalTrackedMinutes],
+      ],
+    },
+    {
+      heading: "Attendance & hours",
+      rows: [
+        ["Days in range", input.attendance.daysInRange],
+        ["Days present", input.attendance.daysPresent],
+        ["Days absent", input.attendance.daysAbsent],
+        ["Open sessions (no check-out)", input.attendance.openSessions],
+        ["Total net work time", formatMinutes(input.attendance.netMinutes)],
+        ["Total break time", formatMinutes(input.attendance.breakMinutes)],
+        ["Total overtime", formatMinutes(input.attendance.overtimeMinutes)],
+        ["Average net work / present day", formatMinutes(input.attendance.averageNetMinutes)],
+        ["Daily baseline", `${STANDARD_DAILY_HOURS}h 00m`],
+      ],
+    },
+  ];
+
+  blocks.forEach((block) => {
+    cursor += 1;
+    const headingCell = sheet.getCell(`A${cursor}`);
+    headingCell.value = block.heading;
+    headingCell.font = { bold: true, size: 13, color: { argb: "FF14213D" } };
+    cursor += 1;
+
+    block.rows.forEach(([label, value]) => {
+      const labelCell = sheet.getCell(`A${cursor}`);
+      const valueCell = sheet.getCell(`B${cursor}`);
+      labelCell.value = label;
+      labelCell.font = { bold: true };
+      labelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF3FF" } };
+      labelCell.border = THIN_BORDER;
+      valueCell.value = value;
+      valueCell.border = THIN_BORDER;
+      valueCell.alignment = { horizontal: "right" };
+      cursor += 1;
+    });
+  });
+
+  return sheet;
+}
+
+function addEntriesSheet(workbook: ExcelJS.Workbook, items: ReportSummaryItem[]) {
+  const sheet = workbook.addWorksheet("Report Entries", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  sheet.columns = [
+    { header: "#", key: "index", width: 5 },
+    { header: "Date", key: "date", width: 13 },
+    { header: "Task", key: "task", width: 34 },
+    { header: "Department", key: "department", width: 16 },
+    { header: "Priority", key: "priority", width: 10 },
+    { header: "Status", key: "status", width: 13 },
+    { header: "Progress %", key: "progress", width: 11 },
+    { header: "Tracked (min)", key: "trackedMinutes", width: 13 },
+    { header: "Notes", key: "notes", width: 42 },
+    { header: "Follow-up", key: "followUp", width: 10 },
+    { header: "Continued", key: "continued", width: 10 },
+    { header: "Days active", key: "daysActive", width: 11 },
+  ];
+  styleHeaderRow(sheet.getRow(1));
+
+  items.forEach((item, index) => {
+    const row = sheet.addRow({
+      index: index + 1,
+      date: item.date,
+      task: item.title,
+      department: item.departmentName,
+      priority: item.priority.charAt(0).toUpperCase() + item.priority.slice(1),
+      status: statusLabel(item.status),
+      progress: item.completionPercent,
+      trackedMinutes: item.trackedMinutes,
+      notes: item.description || item.note || "",
+      followUp: item.isFollowUp ? "Yes" : "No",
+      continued: item.isContinued ? "Yes" : "No",
+      daysActive: item.continuation?.totalDays ?? 1,
+    });
+
+    row.eachCell((cell) => {
+      cell.border = THIN_BORDER;
+      cell.alignment = { vertical: "middle" };
+    });
+
+    if (index % 2 === 1) {
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFF" } };
+      });
+    }
+
+    const statusCell = row.getCell("status");
+    statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: STATUS_FILL[item.status] } };
+    statusCell.font = { bold: true, color: { argb: STATUS_FONT_COLOR[item.status] } };
+    statusCell.alignment = { horizontal: "center", vertical: "middle" };
+
+    row.getCell("progress").numFmt = '0"%"';
+    row.getCell("progress").alignment = { horizontal: "right" };
+    row.getCell("trackedMinutes").alignment = { horizontal: "right" };
+    row.getCell("notes").alignment = { wrapText: true, vertical: "middle" };
+  });
+
+  if (items.length) {
+    const totalRow = sheet.addRow({
+      index: "",
+      date: "",
+      task: `Total · ${items.length} ${items.length === 1 ? "entry" : "entries"}`,
+      department: "",
+      priority: "",
+      status: "",
+      progress: "",
+      trackedMinutes: { formula: `SUM(H2:H${items.length + 1})` },
+      notes: "",
+      followUp: "",
+      continued: "",
+      daysActive: "",
+    });
+    totalRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.border = { top: { style: "double", color: { argb: "FF4F5EF7" } } };
+    });
+  }
+
+  sheet.autoFilter = { from: "A1", to: `L${items.length + 1 || 1}` };
+  return sheet;
+}
+
+function addDailyLogSheet(workbook: ExcelJS.Workbook, items: ReportSummaryItem[]) {
+  const dailyRows = items.flatMap((item) =>
+    item.continuation && item.continuation.dailyLogs.length > 1
+      ? item.continuation.dailyLogs.map((entry) => ({ task: item.title, ...entry }))
+      : [],
+  );
+
+  if (!dailyRows.length) {
+    return null;
+  }
+
+  const sheet = workbook.addWorksheet("Daily Log", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  sheet.columns = [
+    { header: "Task", key: "task", width: 34 },
+    { header: "Date", key: "date", width: 13 },
+    { header: "Progress %", key: "progress", width: 11 },
+    { header: "Tracked (min)", key: "trackedMinutes", width: 13 },
+    { header: "Note", key: "note", width: 48 },
+  ];
+  styleHeaderRow(sheet.getRow(1));
+
+  dailyRows.forEach((entry, index) => {
+    const row = sheet.addRow({
+      task: entry.task,
+      date: entry.date,
+      progress: entry.progress,
+      trackedMinutes: entry.trackedMinutes,
+      note: entry.note,
+    });
+
+    row.eachCell((cell) => {
+      cell.border = THIN_BORDER;
+      cell.alignment = { vertical: "middle" };
+    });
+
+    if (index % 2 === 1) {
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFF" } };
+      });
+    }
+
+    row.getCell("progress").numFmt = '0"%"';
+    row.getCell("progress").alignment = { horizontal: "right" };
+    row.getCell("trackedMinutes").alignment = { horizontal: "right" };
+    row.getCell("note").alignment = { wrapText: true, vertical: "middle" };
+  });
+
+  sheet.autoFilter = { from: "A1", to: `E${dailyRows.length + 1}` };
+  return sheet;
+}
+
+function addAttendanceSheet(
+  workbook: ExcelJS.Workbook,
+  attendanceData: Array<{ date: string; checkInAt: string | null; checkOutAt: string | null; breakMinutes: number }>,
+) {
+  if (!attendanceData.length) {
+    return null;
+  }
+
+  const sheet = workbook.addWorksheet("Attendance", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  sheet.columns = [
+    { header: "Date", key: "date", width: 13 },
+    { header: "Check In", key: "checkIn", width: 14 },
+    { header: "Check Out", key: "checkOut", width: 14 },
+    { header: "Break (min)", key: "breakTime", width: 12 },
+    { header: "Work Time (hrs)", key: "workTime", width: 14 },
+    { header: "Status", key: "status", width: 12 },
+  ];
+  styleHeaderRow(sheet.getRow(1));
+
+  attendanceData.forEach((entry, index) => {
+    const checkInTime = entry.checkInAt ? new Date(`${entry.checkInAt}`) : null;
+    const checkOutTime = entry.checkOutAt ? new Date(`${entry.checkOutAt}`) : null;
+
+    let workHours = 0;
+    if (checkInTime && checkOutTime) {
+      workHours = (checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60) - entry.breakMinutes / 60;
+    }
+
+    const status = !entry.checkInAt ? "Absent" : !entry.checkOutAt ? "Not Checked Out" : "Present";
+
+    const row = sheet.addRow({
+      date: entry.date,
+      checkIn: checkInTime ? checkInTime.toLocaleTimeString("en-BD") : "--",
+      checkOut: checkOutTime ? checkOutTime.toLocaleTimeString("en-BD") : "--",
+      breakTime: entry.breakMinutes,
+      workTime: workHours > 0 ? workHours.toFixed(2) : "--",
+      status: status,
+    });
+
+    row.eachCell((cell) => {
+      cell.border = THIN_BORDER;
+      cell.alignment = { vertical: "middle" };
+    });
+
+    if (index % 2 === 1) {
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFF" } };
+      });
+    }
+
+    const statusCell = row.getCell("status");
+    if (status === "Present") {
+      statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } };
+      statusCell.font = { color: { argb: "FF065F46" }, bold: true };
+    } else if (status === "Not Checked Out") {
+      statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+      statusCell.font = { color: { argb: "FF92400E" }, bold: true };
+    } else {
+      statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } };
+      statusCell.font = { color: { argb: "FF991B1B" }, bold: true };
+    }
+    statusCell.alignment = { horizontal: "center" };
+
+    row.getCell("breakTime").alignment = { horizontal: "right" };
+    row.getCell("workTime").alignment = { horizontal: "right" };
+  });
+
+  sheet.autoFilter = { from: "A1", to: `F${attendanceData.length + 1}` };
+  return sheet;
+}
+
+const DAY_TASK_HEADERS = [
+  "Task",
+  "Department",
+  "Priority",
+  "Status",
+  "Started",
+  "Finished",
+  "Tracked",
+  "Progress %",
+  "Progress note",
+  "Description",
+] as const;
+
+/**
+ * The heart of the report: one block per calendar day in the selected range.
+ *
+ * Each block stacks the day's attendance (in, out, break, net, overtime) on
+ * top of every task touched that day, so a reader auditing "what did this
+ * person do on the 18th" never has to cross-reference another sheet. Days
+ * with no attendance and no tasks still get a block, because a silent gap in
+ * a monitoring report is itself the finding.
+ */
+function addDayByDayDetailSheet(
+  workbook: ExcelJS.Workbook,
+  items: ReportSummaryItem[],
+  attendanceData: AttendanceDay[],
+  from: string,
+  to: string,
+) {
+  const sheet = workbook.addWorksheet("Day-by-Day Details", { views: [{ showGridLines: false }] });
+
+  // Widths first: assigning `columns` after the cells exist rebuilds the
+  // column defs underneath already-written data.
+  sheet.columns = [
+    { width: 34 },
+    { width: 16 },
+    { width: 10 },
+    { width: 13 },
+    { width: 11 },
+    { width: 11 },
+    { width: 10 },
+    { width: 11 },
+    { width: 34 },
+    { width: 40 },
+  ];
+
+  const tasksByDate = new Map<string, ReportSummaryItem[]>();
+  items.forEach((item) => {
+    const bucket = tasksByDate.get(item.date);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      tasksByDate.set(item.date, [item]);
+    }
+  });
+
+  const attendanceMap = new Map(attendanceData.map((entry) => [entry.date, entry]));
+
+  // The requested range is the spine. Anything recorded outside it (a task
+  // whose report date drifted) is appended so no data silently vanishes.
+  const rangeDates = listDatesInRange(from, to);
+  const extraDates = [...tasksByDate.keys(), ...attendanceMap.keys()].filter((date) => !rangeDates.includes(date));
+  const sortedDates = [...new Set([...rangeDates, ...extraDates])].sort();
+
+  const lastColumn = DAY_TASK_HEADERS.length;
+  let currentRow = 1;
+
+  const paintRow = (row: number, fill: string | null, font: Partial<ExcelJS.Font>) => {
+    for (let column = 1; column <= lastColumn; column += 1) {
+      const cell = sheet.getCell(row, column);
+      cell.border = THIN_BORDER;
+      cell.font = font;
+      if (fill) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+      }
+    }
+  };
+
+  sortedDates.forEach((date) => {
+    const tasks = tasksByDate.get(date) ?? [];
+    const attendance = attendanceMap.get(date);
+    const metrics = measureAttendanceDay(attendance);
+    const taskMinutes = tasks.reduce((total, task) => total + task.trackedMinutes, 0);
+
+    // ---- Day banner -------------------------------------------------------
+    sheet.mergeCells(currentRow, 1, currentRow, lastColumn);
+    const banner = sheet.getCell(currentRow, 1);
+    banner.value = formatDayLabel(date);
+    banner.alignment = { vertical: "middle", horizontal: "left" };
+    paintRow(currentRow, "FF4F5EF7", { bold: true, size: 12, color: { argb: "FFFFFFFF" } });
+    sheet.getRow(currentRow).height = 22;
+    currentRow += 1;
+
+    // ---- Attendance strip -------------------------------------------------
+    const attendancePairs: Array<[string, string]> = [
+      ["Check-in", clockInDhaka(attendance?.checkInAt)],
+      ["Check-out", clockInDhaka(attendance?.checkOutAt)],
+      ["Break", formatMinutes(metrics.breakMinutes)],
+      ["Net work", metrics.status === "Present" ? formatMinutes(metrics.netMinutes) : "--"],
+      ["Overtime", metrics.status === "Present" ? formatMinutes(metrics.overtimeMinutes) : "--"],
+    ];
+
+    attendancePairs.forEach(([label, value], index) => {
+      const labelCell = sheet.getCell(currentRow, index * 2 + 1);
+      const valueCell = sheet.getCell(currentRow, index * 2 + 2);
+      labelCell.value = label;
+      labelCell.font = { bold: true, size: 10, color: { argb: "FF47597C" } };
+      valueCell.value = value;
+      valueCell.font = { bold: true, size: 10, color: { argb: "FF14213D" } };
+      valueCell.alignment = { horizontal: "left" };
+    });
+
+    for (let column = 1; column <= lastColumn; column += 1) {
+      const cell = sheet.getCell(currentRow, column);
+      cell.border = THIN_BORDER;
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF3FF" } };
+    }
+    currentRow += 1;
+
+    // A second strip carries the day's verdict and the two totals that answer
+    // "was the tracked work consistent with the hours claimed".
+    const summaryPairs: Array<[string, string]> = [
+      ["Attendance", metrics.status],
+      ["Gross span", metrics.status === "Present" ? formatMinutes(metrics.grossMinutes) : "--"],
+      ["Tasks", String(tasks.length)],
+      ["Task time", formatMinutes(taskMinutes)],
+      ["Completed", String(tasks.filter((task) => task.status === "done").length)],
+    ];
+
+    summaryPairs.forEach(([label, value], index) => {
+      const labelCell = sheet.getCell(currentRow, index * 2 + 1);
+      const valueCell = sheet.getCell(currentRow, index * 2 + 2);
+      labelCell.value = label;
+      labelCell.font = { bold: true, size: 10, color: { argb: "FF47597C" } };
+      valueCell.value = value;
+      valueCell.font = { size: 10, color: { argb: "FF14213D" } };
+    });
+
+    for (let column = 1; column <= lastColumn; column += 1) {
+      const cell = sheet.getCell(currentRow, column);
+      cell.border = THIN_BORDER;
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF6F8FF" } };
+    }
+
+    const verdictCell = sheet.getCell(currentRow, 2);
+    verdictCell.font = {
+      bold: true,
+      size: 10,
+      color: { argb: metrics.status === "Present" ? "FF065F46" : metrics.status === "Open session" ? "FF92400E" : "FF991B1B" },
+    };
+    currentRow += 1;
+
+    // ---- Task table -------------------------------------------------------
+    if (!tasks.length) {
+      sheet.mergeCells(currentRow, 1, currentRow, lastColumn);
+      const emptyCell = sheet.getCell(currentRow, 1);
+      emptyCell.value = "No task activity recorded on this day.";
+      emptyCell.alignment = { horizontal: "left", vertical: "middle" };
+      paintRow(currentRow, "FFFFFFFF", { italic: true, size: 10, color: { argb: "FF8592AD" } });
+      currentRow += 2;
+      return;
+    }
+
+    DAY_TASK_HEADERS.forEach((header, index) => {
+      sheet.getCell(currentRow, index + 1).value = header;
+    });
+    paintRow(currentRow, "FF6B78F9", { bold: true, size: 10, color: { argb: "FFFFFFFF" } });
+    for (let column = 1; column <= lastColumn; column += 1) {
+      sheet.getCell(currentRow, column).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    }
+    sheet.getRow(currentRow).height = 18;
+    currentRow += 1;
+
+    tasks.forEach((task, taskIndex) => {
+      const values: Array<string | number> = [
+        task.title,
+        task.departmentName,
+        task.priority.charAt(0).toUpperCase() + task.priority.slice(1),
+        statusLabel(task.status),
+        clockInDhaka(task.actualStart),
+        clockInDhaka(task.actualEnd),
+        formatMinutes(task.trackedMinutes),
+        task.completionPercent,
+        task.note || "—",
+        task.description || "—",
+      ];
+
+      values.forEach((value, index) => {
+        const cell = sheet.getCell(currentRow, index + 1);
+        cell.value = value;
+        cell.border = THIN_BORDER;
+        cell.alignment = { vertical: "top", wrapText: index >= 8 };
+      });
+
+      if (taskIndex % 2 === 1) {
+        for (let column = 1; column <= lastColumn; column += 1) {
+          sheet.getCell(currentRow, column).fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF8FAFF" },
+          };
+        }
+      }
+
+      const statusCell = sheet.getCell(currentRow, 4);
+      statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: STATUS_FILL[task.status] } };
+      statusCell.font = { bold: true, color: { argb: STATUS_FONT_COLOR[task.status] } };
+      statusCell.alignment = { horizontal: "center", vertical: "middle" };
+
+      sheet.getCell(currentRow, 8).numFmt = '0"%"';
+      sheet.getCell(currentRow, 8).alignment = { horizontal: "right", vertical: "top" };
+      sheet.getCell(currentRow, 7).alignment = { horizontal: "right", vertical: "top" };
+
+      currentRow += 1;
+    });
+
+    // Day total, so each block closes with its own bottom line.
+    sheet.getCell(currentRow, 1).value = `Day total · ${tasks.length} ${tasks.length === 1 ? "entry" : "entries"}`;
+    sheet.getCell(currentRow, 7).value = formatMinutes(taskMinutes);
+    paintRow(currentRow, "FFEAEEFF", { bold: true, size: 10, color: { argb: "FF14213D" } });
+    sheet.getCell(currentRow, 7).alignment = { horizontal: "right" };
+    currentRow += 2;
+  });
+
+  return sheet;
+}
+
+function addPerformanceSheet(workbook: ExcelJS.Workbook, items: ReportSummaryItem[]) {
+  const sheet = workbook.addWorksheet("Performance", {
+    views: [{ showGridLines: false }],
+  });
+
+  sheet.columns = [{ width: 30 }, { width: 18 }];
+
+  const titleRow = sheet.addRow(["Performance Summary", ""]);
+  titleRow.getCell(1).font = { bold: true, size: 12, color: { argb: "FF14213D" } };
+  sheet.getRow(1).height = 20;
+
+  // Task completion rates
+  sheet.addRow(["By Status", ""]);
+  sheet.getCell(`A${sheet.lastRow?.number ?? 2}`).font = { bold: true, size: 11 };
+
+  const completed = items.filter((i) => i.status === "done").length;
+  const inProgress = items.filter((i) => i.status === "in_progress").length;
+  const pending = items.filter((i) => i.status === "pending").length;
+
+  sheet.addRow([
+    "Completed Tasks",
+    completed,
+  ]);
+  sheet.addRow(["In Progress Tasks", inProgress]);
+  sheet.addRow(["Pending Tasks", pending]);
+
+  const completionRate = items.length > 0 ? ((completed / items.length) * 100).toFixed(2) : 0;
+  sheet.addRow(["Completion Rate (%)", completionRate]);
+
+  sheet.addRow([]);
+
+  // By Priority
+  sheet.addRow(["By Priority", ""]);
+  sheet.getCell(`A${sheet.lastRow?.number ?? 6}`).font = { bold: true, size: 11 };
+
+  const critical = items.filter((i) => i.priority === "critical").length;
+  const high = items.filter((i) => i.priority === "high").length;
+  const normal = items.filter((i) => i.priority === "normal").length;
+  const low = items.filter((i) => i.priority === "low").length;
+
+  sheet.addRow(["Critical", critical]);
+  sheet.addRow(["High", high]);
+  sheet.addRow(["Normal", normal]);
+  sheet.addRow(["Low", low]);
+
+  sheet.addRow([]);
+
+  // By Department
+  sheet.addRow(["By Department", ""]);
+  sheet.getCell(`A${sheet.lastRow?.number ?? 12}`).font = { bold: true, size: 11 };
+
+  const departments = new Map<string, number>();
+  items.forEach((item) => {
+    departments.set(item.departmentName, (departments.get(item.departmentName) ?? 0) + 1);
+  });
+
+  departments.forEach((count, dept) => {
+    sheet.addRow([dept, count]);
+  });
+
+  sheet.eachRow((row) => {
+    row.eachCell((cell, columnNumber) => {
+      cell.border = THIN_BORDER;
+      if (columnNumber === 2 && typeof cell.value === "number") {
+        cell.alignment = { horizontal: "right" };
+      }
+    });
+  });
+
+  return sheet;
+}
+
 export async function GET(request: NextRequest) {
   const user = await requireEmployee();
   const requestedFrom = request.nextUrl.searchParams.get("from") || toDateOnly();
   const requestedTo = request.nextUrl.searchParams.get("to") || requestedFrom;
   const from = requestedFrom <= requestedTo ? requestedFrom : requestedTo;
   const to = requestedFrom <= requestedTo ? requestedTo : requestedFrom;
+
+  // Fetch task history
   const historyTasks = await getHistoryData(user.id, from, to);
   const summary = buildReportSummary(historyTasks);
 
-  const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Work Report · ${escapeHtml(user.name)} · ${escapeHtml(formatRangeLabel(from, to))}</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --ink: #14213d;
-        --muted: #64748b;
-        --line: #dbe4ff;
-        --line-soft: #e8eefc;
-        --brand: #4f5ef7;
-        --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font-family: "Segoe UI", Arial, sans-serif;
-        background: #eef3ff;
-        color: var(--ink);
-      }
-      .page {
-        max-width: 1080px;
-        margin: 32px auto;
-        background: #ffffff;
-        border-radius: 28px;
-        overflow: hidden;
-        box-shadow: 0 24px 60px rgba(20, 33, 61, 0.12);
-      }
-      .hero {
-        padding: 30px 32px;
-        background: linear-gradient(135deg, #001f66 0%, #2b3fd8 55%, #6d5df6 100%);
-        color: #ffffff;
-      }
-      .hero-grid {
-        display: grid;
-        grid-template-columns: 1.6fr 1fr;
-        gap: 24px;
-      }
-      .eyebrow {
-        font-family: var(--mono);
-        font-size: 11px;
-        letter-spacing: 0.2em;
-        text-transform: uppercase;
-        opacity: 0.82;
-      }
-      h1 {
-        margin: 10px 0 8px;
-        font-size: 32px;
-        letter-spacing: -0.02em;
-      }
-      .hero p {
-        margin: 0;
-        line-height: 1.6;
-      }
-      .hero .person {
-        font-weight: 600;
-      }
-      .hero .range {
-        font-family: var(--mono);
-        font-size: 13px;
-        opacity: 0.9;
-        margin-top: 4px;
-      }
-      .hero-card {
-        padding: 16px 18px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.12);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-      }
-      .hero-card strong {
-        display: block;
-        margin-top: 6px;
-        font-family: var(--mono);
-        font-size: 15px;
-      }
-      .hero-card p {
-        margin-top: 10px;
-        font-size: 12.5px;
-        opacity: 0.85;
-      }
-      .content {
-        padding: 26px 32px 32px;
-      }
-      .toolbar {
-        display: flex;
-        justify-content: flex-end;
-        margin-bottom: 16px;
-      }
-      .print-btn {
-        font: inherit;
-        font-size: 13px;
-        font-weight: 600;
-        color: #ffffff;
-        background: var(--brand);
-        border: 0;
-        border-radius: 12px;
-        padding: 10px 16px;
-        cursor: pointer;
-        box-shadow: 0 10px 22px rgba(79, 94, 247, 0.24);
-      }
-      .print-btn:hover {
-        background: #4453eb;
-      }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
-        margin-bottom: 22px;
-      }
-      .stat {
-        position: relative;
-        padding: 16px 16px 14px;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: #f8faff;
-        overflow: hidden;
-      }
-      .stat::before {
-        content: "";
-        position: absolute;
-        inset: 0 0 auto 0;
-        height: 3px;
-        background: linear-gradient(90deg, var(--a), var(--b));
-      }
-      .stat-tasks { --a: #4f5ef7; --b: #8b9dff; }
-      .stat-done { --a: #059669; --b: #6ee7b7; }
-      .stat-progress { --a: #0284c7; --b: #7dd3fc; }
-      .stat-time { --a: #7c3aed; --b: #c084fc; }
-      .stat-label {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: var(--muted);
-      }
-      .stat-value {
-        margin-top: 8px;
-        font-size: 26px;
-        font-weight: 700;
-        font-variant-numeric: tabular-nums;
-        letter-spacing: -0.02em;
-      }
-      .stat-done .stat-value { color: #0f8f68; }
-      .stat-progress .stat-value { color: #1d6fd0; }
-      /*
-       * The frame lives on the wrapper, not the table: a collapsed-border table
-       * does not reliably keep its own outer border once a radius is applied,
-       * which is why the left and right edges went missing.
-       */
-      .table-wrap {
-        overflow-x: auto;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-      }
-      table {
-        width: 100%;
-        min-width: 620px;
-        border-collapse: collapse;
-        table-layout: fixed;
-      }
-      thead {
-        background: #eaf0ff;
-      }
-      th,
-      td {
-        padding: 11px 12px;
-        text-align: left;
-        vertical-align: top;
-        border-right: 1px solid var(--line-soft);
-        border-bottom: 1px solid var(--line-soft);
-      }
-      th:last-child,
-      td:last-child {
-        border-right: 0;
-      }
-      th {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: #47597c;
-        border-bottom: 2px solid var(--line);
-        border-right-color: var(--line);
-      }
-      td {
-        font-size: 13.5px;
-        word-break: break-word;
-      }
-      tbody tr:nth-child(even) {
-        background: #fafbff;
-      }
-      .col-index {
-        text-align: right;
-        font-family: var(--mono);
-        font-size: 12px;
-        font-variant-numeric: tabular-nums;
-        color: var(--muted);
-      }
-      .col-num {
-        text-align: right;
-        white-space: nowrap;
-        font-family: var(--mono);
-        font-variant-numeric: tabular-nums;
-      }
-      .col-date {
-        white-space: nowrap;
-        font-family: var(--mono);
-        font-size: 12.5px;
-        color: var(--muted);
-      }
-      .task-title {
-        font-weight: 700;
-        color: var(--ink);
-      }
-      .task-meta {
-        margin-top: 5px;
-        color: var(--muted);
-        line-height: 1.5;
-        font-size: 12.5px;
-      }
-      tbody tr:last-child td {
-        border-bottom: 0;
-      }
-      tfoot td {
-        border-top: 2px solid var(--line);
-        border-bottom: 0;
-        background: #f8faff;
-        font-weight: 700;
-        font-size: 13px;
-      }
-      .status {
-        display: inline-flex;
-        padding: 5px 10px;
-        border-radius: 999px;
-        font-size: 11.5px;
-        font-weight: 700;
-        white-space: nowrap;
-      }
-      .status-done {
-        background: #e8fff3;
-        color: #0f8f68;
-      }
-      .status-in_progress {
-        background: #edf4ff;
-        color: #295fd6;
-      }
-      .status-pending {
-        background: #fff7e8;
-        color: #b7791f;
-      }
-      .empty {
-        padding: 34px 16px;
-        text-align: center;
-        color: var(--muted);
-      }
-      .footer {
-        margin-top: 18px;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        color: var(--muted);
-        font-size: 12.5px;
-      }
-      @page {
-        size: A4;
-        margin: 12mm;
-      }
-      @media print {
-        body {
-          background: #ffffff;
-        }
-        .page {
-          margin: 0;
-          max-width: none;
-          box-shadow: none;
-          border-radius: 0;
-        }
-        .hero {
-          border-radius: 0;
-        }
-        .toolbar {
-          display: none;
-        }
-        /* Repeat the header on every printed page and never split a row. */
-        thead {
-          display: table-header-group;
-        }
-        tr,
-        .stat {
-          break-inside: avoid;
-        }
-        .hero,
-        .stat,
-        .status,
-        thead,
-        tbody tr,
-        tfoot td {
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        .table-wrap {
-          overflow: visible;
-        }
-        table {
-          min-width: 0;
-        }
-      }
-      @media (max-width: 720px) {
-        .page {
-          margin: 0;
-          border-radius: 0;
-        }
-        .hero,
-        .content {
-          padding: 20px;
-        }
-        .hero-grid,
-        .stats {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <section class="hero">
-        <div class="hero-grid">
-          <div>
-            <div class="eyebrow">WorkLog Ultra</div>
-            <h1>Employee Work Report</h1>
-            <p class="person">${escapeHtml(user.name)} · ${escapeHtml(user.designation ?? user.role)}</p>
-            <p class="range">${escapeHtml(formatRangeLabel(from, to))}</p>
-          </div>
-          <div class="hero-card">
-            <div class="eyebrow">Generated</div>
-            <strong>${escapeHtml(formatDateTimeInDhaka(new Date()))}</strong>
-            <p>Keep, share, or print this statement. Use Print and choose "Save as PDF" for a PDF copy.</p>
-          </div>
-        </div>
-      </section>
+  // attendanceDate is a @db.Date, so every value is UTC midnight. Querying it
+  // with a Dhaka (+06:00) window would shift the bounds six hours and pull in
+  // (or drop) a neighbouring day, so the window is widened by a day on each
+  // side in plain UTC and the exact range is enforced on the derived key below.
+  const attendanceRecords = await db.attendanceRecord.findMany({
+    where: {
+      userId: user.id,
+      attendanceDate: {
+        gte: new Date(`${from}T00:00:00.000Z`),
+        lte: new Date(`${to}T23:59:59.999Z`),
+      },
+    },
+    orderBy: { attendanceDate: "asc" },
+  });
 
-      <section class="content">
-        <div class="toolbar">
-          <button class="print-btn" onclick="window.print()" type="button">Print / Save as PDF</button>
-        </div>
+  const attendanceData: AttendanceDay[] = attendanceRecords
+    .map((record) => ({
+      date: toDateOnly(record.attendanceDate),
+      checkInAt: record.checkInAt?.toISOString() ?? null,
+      checkOutAt: record.checkOutAt?.toISOString() ?? null,
+      breakMinutes: record.breakMinutes ?? 0,
+    }))
+    .filter((entry) => entry.date >= from && entry.date <= to);
 
-        <div class="stats">
-          <div class="stat stat-tasks">
-            <div class="stat-label">Total Tasks</div>
-            <div class="stat-value">${summary.totals.totalTasks}</div>
-          </div>
-          <div class="stat stat-done">
-            <div class="stat-label">Completed</div>
-            <div class="stat-value">${summary.totals.completedTasks}</div>
-          </div>
-          <div class="stat stat-progress">
-            <div class="stat-label">In Progress</div>
-            <div class="stat-value">${summary.totals.inProgressTasks}</div>
-          </div>
-          <div class="stat stat-time">
-            <div class="stat-label">Tracked Time</div>
-            <div class="stat-value">${escapeHtml(summary.totals.totalTrackedLabel)}</div>
-          </div>
-        </div>
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "WorkLog Ultra";
+  workbook.created = new Date();
+  workbook.title = "WorkLog Ultra Employee Report";
+  workbook.subject = `Work report for ${user.name}`;
 
-        <div class="table-wrap">
-        <table>
-          <colgroup>
-            <col style="width: 42px" />
-            <col style="width: 104px" />
-            <col />
-            <col style="width: 116px" />
-            <col style="width: 84px" />
-            <col style="width: 82px" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th class="col-index">#</th>
-              <th>Date</th>
-              <th>Task Details</th>
-              <th>Status</th>
-              <th class="col-num">Time</th>
-              <th class="col-num">Progress</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              summary.items.length
-                ? summary.items
-                    .map(
-                      (item, index) => `<tr>
-                <td class="col-index">${index + 1}</td>
-                <td class="col-date">${escapeHtml(item.date)}</td>
-                <td>
-                  <div class="task-title">${escapeHtml(item.title)}</div>
-                  <div class="task-meta">${escapeHtml(item.departmentName)}</div>
-                  ${
-                    item.description
-                      ? `<div class="task-meta">${escapeHtml(item.description)}</div>`
-                      : item.note
-                        ? `<div class="task-meta">${escapeHtml(item.note)}</div>`
-                        : ""
-                  }
-                </td>
-                <td><span class="status status-${item.status}">${escapeHtml(statusLabel(item.status))}</span></td>
-                <td class="col-num">${escapeHtml(formatMinutes(item.trackedMinutes))}</td>
-                <td class="col-num">${item.completionPercent}%</td>
-              </tr>`,
-                    )
-                    .join("")
-                : `<tr><td class="empty" colspan="6">No report data found for ${escapeHtml(formatRangeLabel(from, to))}.</td></tr>`
-            }
-          </tbody>
-          ${
-            summary.items.length
-              ? `<tfoot>
-            <tr>
-              <td colspan="4">Total · ${summary.items.length} ${summary.items.length === 1 ? "entry" : "entries"}</td>
-              <td class="col-num">${escapeHtml(summary.totals.totalTrackedLabel)}</td>
-              <td class="col-num"></td>
-            </tr>
-          </tfoot>`
-              : ""
-          }
-        </table>
-        </div>
+  const rangeDates = listDatesInRange(from, to);
 
-        <div class="footer">
-          <span>Range: ${escapeHtml(formatRangeLabel(from, to))}</span>
-          <span>Generated from WorkLog Ultra</span>
-        </div>
-      </section>
-    </div>
-  </body>
-</html>`;
+  // Add sheets in order
+  addCoverSheet(workbook, {
+    employeeName: user.name,
+    employeeRole: user.designation ?? user.role,
+    rangeLabel: formatRangeLabel(from, to),
+    generatedAt: formatDateTimeInDhaka(new Date()),
+    totals: summary.totals,
+    attendance: summariseAttendance(attendanceData, rangeDates.length),
+  });
 
-  return new NextResponse(html, {
+  addDayByDayDetailSheet(workbook, summary.items, attendanceData, from, to);
+  addAttendanceSheet(workbook, attendanceData);
+  addEntriesSheet(workbook, summary.items);
+  addDailyLogSheet(workbook, summary.items);
+  addPerformanceSheet(workbook, summary.items);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  return new NextResponse(buffer, {
     headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Disposition": `attachment; filename="worklog-report-${slugify(user.name)}-${from}-to-${to}.html"`,
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="worklog-report-${slugify(user.name)}-${from}-to-${to}.xlsx"`,
     },
   });
 }

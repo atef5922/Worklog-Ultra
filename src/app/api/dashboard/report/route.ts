@@ -67,10 +67,15 @@ export async function POST(request: NextRequest) {
   });
 
   const reportDateOnly = toDateOnly(parsed.data.reportDate);
-  const mismatchedPlan = tasks.some((task) => toDateOnly(task.planDate) !== reportDateOnly);
+  // A task carried forward because it was still open (see
+  // isVisibleInTodaysWorkPlan) is logged against today's date while its
+  // planDate stays back on the day it was originally planned, so the two no
+  // longer have to match exactly — only a report dated before the task even
+  // existed is actually invalid.
+  const invalidPlan = tasks.some((task) => toDateOnly(task.planDate) > reportDateOnly);
 
-  if (mismatchedPlan) {
-    return apiError("Report date must match the original task plan date.", 400);
+  if (invalidPlan) {
+    return apiError("Report date cannot be earlier than the task's plan date.", 400);
   }
 
   await db.$transaction(
