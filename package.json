@@ -1,6 +1,6 @@
 {
   "name": "worklog-ultra-app",
-  "version": "0.3.2",
+  "version": "0.3.1",
   "private": true,
   "description": "WorkLog Ultra desktop application for team work planning, reporting, attendance, and time tracking.",
   "author": "WorkLog Ultra",
@@ -12,7 +12,7 @@
     "dev": "next dev --webpack",
     "dev:turbopack": "next dev",
     "desktop:dev": "node electron/launch.cjs",
-    "desktop:build": "electron-builder --win",
+    "desktop:build": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/build-desktop-runtime.ps1 && electron-builder --win",
     "prebuild": "prisma generate",
     "build": "next build --webpack",
     "start": "next start -p 3000",
@@ -70,6 +70,32 @@
     },
     "files": [
       "**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop-runtime/app-runtime.7z",
+        "to": "app-runtime.7z"
+      },
+      {
+        "from": "desktop-runtime/tools/7za.exe",
+        "to": "7za.exe"
+      },
+      {
+        "from": "desktop-runtime/tools/7zip-COPYING.txt",
+        "to": "licenses/7zip-COPYING.txt"
+      },
+      {
+        "from": "desktop-runtime/tools/7zip-LICENSE.txt",
+        "to": "licenses/7zip-LICENSE.txt"
+      },
+      {
+        "from": "desktop-runtime/postgres",
+        "to": "postgres"
+      },
+      {
+        "from": "desktop-runtime/schema.sql",
+        "to": "database-schema.sql"
+      }
     ],
     "win": {
       "target": [

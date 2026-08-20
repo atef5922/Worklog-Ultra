@@ -1,21 +1,15 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const fsp = require("node:fs/promises");
 const http = require("node:http");
-const https = require("node:https");
 const path = require("node:path");
 const { createScreenshotMonitor } = require("./screenshot-monitor.cjs");
 
-/**
- * Packaged builds are a thin client against the shared production server —
- * not a standalone app with its own database. Screenshot monitoring (and
- * every other multi-employee feature) only makes sense against one shared
- * backend that every employee's desktop app talks to; a locally bundled
- * Postgres per install was tried at one point and quietly broke exactly
- * that, since each machine ended up with its own empty, unsynced database.
- * Override with WORKLOG_APP_URL for pointing a build at a staging server.
- */
-const APP_URL = process.env.WORKLOG_APP_URL || (app.isPackaged ? "https://worklog.mugnee.com" : "http://localhost:3000");
+const APP_PORT = 3210;
+const DATABASE_PORT = 55432;
+const APP_URL = process.env.WORKLOG_APP_URL || (app.isPackaged ? `http://127.0.0.1:${APP_PORT}` : "http://localhost:3000");
 const APP_ORIGIN = new URL(APP_URL).origin;
 
 let mainWindow;
@@ -59,59 +53,189 @@ function getStorageRoot() {
 
 function isServerReady() {
   return new Promise((resolve) => {
-    const client = APP_URL.startsWith("https:") ? https : http;
-    const request = client.get(APP_URL, (response) => {
+    const request = http.get(APP_URL, (response) => {
       response.resume();
       resolve(true);
     });
-    request.setTimeout(4000, () => request.destroy());
+    request.setTimeout(800, () => request.destroy());
     request.on("error", () => resolve(false));
   });
 }
 
-/**
- * Dev-only: `npm run dev` isn't running yet when Electron starts against
- * localhost. Packaged builds skip this entirely — there is nothing local to
- * spawn, only the remote server's reachability to wait on.
- */
-async function ensureDevServer() {
-  if (app.isPackaged || (await isServerReady())) return;
-  const isWindows = process.platform === "win32";
-  const command = isWindows ? process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe" : "npm";
-  const args = isWindows ? ["/d", "/s", "/c", "npm.cmd run dev"] : ["run", "dev"];
-  nextProcess = spawn(command, args, {
-    cwd: path.join(__dirname, ".."),
-    env: { ...process.env, WORKLOG_DESKTOP: "1" },
-    windowsHide: true,
-    stdio: "ignore",
+function runProcess(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const { capture = true, ...spawnOptions } = options;
+    const child = spawn(command, args, {
+      ...spawnOptions,
+      windowsHide: true,
+      stdio: capture ? ["ignore", "pipe", "pipe"] : "ignore",
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`${path.basename(command)} failed (${code}): ${stderr || stdout}`));
+    });
   });
+}
+
+function getPostgresPaths() {
+  const root = path.join(process.resourcesPath, "postgres");
+  return {
+    bin: path.join(root, "bin"),
+    data: path.join(app.getPath("userData"), "database"),
+    initdb: path.join(root, "bin", "initdb.exe"),
+    pgCtl: path.join(root, "bin", "pg_ctl.exe"),
+    psql: path.join(root, "bin", "psql.exe"),
+    createdb: path.join(root, "bin", "createdb.exe"),
+    schema: path.join(process.resourcesPath, "database-schema.sql"),
+  };
+}
+
+function getPostgresEnvironment(paths) {
+  return {
+    ...process.env,
+    PATH: `${paths.bin};${process.env.PATH || ""}`,
+    PGHOST: "127.0.0.1",
+    PGPORT: String(DATABASE_PORT),
+    PGUSER: "postgres",
+  };
+}
+
+async function ensurePostgres() {
+  if (!app.isPackaged) return;
+  const paths = getPostgresPaths();
+  const env = getPostgresEnvironment(paths);
+  await fsp.mkdir(paths.data, { recursive: true });
+
+  if (!fs.existsSync(path.join(paths.data, "PG_VERSION"))) {
+    writeDesktopLog("initializing private PostgreSQL database");
+    await runProcess(paths.initdb, ["-D", paths.data, "-U", "postgres", "-A", "trust", "--encoding=UTF8", "--no-locale"], { env });
+  }
+
+  const status = await runProcess(paths.pgCtl, ["status", "-D", paths.data], { env }).then(() => true).catch(() => false);
+  if (!status) {
+    await runProcess(paths.pgCtl, ["start", "-D", paths.data, "-l", path.join(paths.data, "postgres.log"), "-o", `-p ${DATABASE_PORT} -h 127.0.0.1`, "-w"], { env, capture: false });
+  }
+
+  const databaseExists = await runProcess(paths.psql, ["-d", "postgres", "-tAc", "SELECT 1 FROM pg_database WHERE datname='worklog_ultra'"], { env })
+    .then(({ stdout }) => stdout.trim() === "1");
+  if (!databaseExists) await runProcess(paths.createdb, ["worklog_ultra"], { env });
+
+  const schemaMarker = path.join(paths.data, "worklog-schema-v1.ready");
+  if (!fs.existsSync(schemaMarker)) {
+    await runProcess(paths.psql, ["-d", "worklog_ultra", "-v", "ON_ERROR_STOP=1", "-f", paths.schema], { env });
+    await fsp.writeFile(schemaMarker, new Date().toISOString(), "utf8");
+  }
+  writeDesktopLog("private PostgreSQL database ready");
+}
+
+function getDesktopRuntimeRoot() {
+  return path.join(app.getPath("userData"), `app-runtime-${app.getVersion()}`);
+}
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
+/**
+ * Extraction is cached by the *content* of the bundled archive, not just the
+ * app version. Two installs can legitimately share a version number during
+ * iterative testing (or a hotfix rebuild that forgot to bump it) — keying
+ * the cache on version alone left a stale extracted web app silently served
+ * forever after such a rebuild, with the new Electron shell calling APIs
+ * the old cached server didn't have. The hash marker makes that impossible:
+ * any change to the bundled archive is a cache miss regardless of version.
+ */
+async function ensureDesktopRuntime() {
+  if (!app.isPackaged) return;
+  const runtimeRoot = getDesktopRuntimeRoot();
+  const archivePath = path.join(process.resourcesPath, "app-runtime.7z");
+  const hashMarkerPath = path.join(runtimeRoot, ".archive-hash");
+  const bundledHash = await hashFile(archivePath);
+  const cachedHash = await fsp.readFile(hashMarkerPath, "utf8").then((value) => value.trim()).catch(() => null);
+  const runtimeFilesPresent =
+    fs.existsSync(path.join(runtimeRoot, "server.js")) && fs.existsSync(path.join(runtimeRoot, "node_modules", "next"));
+
+  if (runtimeFilesPresent && cachedHash === bundledHash) return;
+
+  writeDesktopLog(`extracting latest UI runtime ${app.getVersion()} (${bundledHash.slice(0, 12)})`);
+  await fsp.rm(runtimeRoot, { recursive: true, force: true });
+  await fsp.mkdir(runtimeRoot, { recursive: true });
+  await runProcess(
+    path.join(process.resourcesPath, "7za.exe"),
+    ["x", archivePath, `-o${runtimeRoot}`, "-y"],
+  );
+  if (!fs.existsSync(path.join(runtimeRoot, "server.js"))) throw new Error("Latest UI runtime extraction failed.");
+  await fsp.writeFile(hashMarkerPath, bundledHash, "utf8");
+  writeDesktopLog("latest UI runtime ready");
+}
+
+async function ensureDesktopUploads() {
+  if (!app.isPackaged) return;
+  const publicUploads = path.join(getDesktopRuntimeRoot(), "public", "uploads");
+  const userUploads = path.join(app.getPath("userData"), "uploads");
+  await fsp.mkdir(path.dirname(publicUploads), { recursive: true });
+  await fsp.mkdir(userUploads, { recursive: true });
+  const existing = await fsp.lstat(publicUploads).catch(() => null);
+  if (existing?.isSymbolicLink()) return;
+  if (existing) await fsp.rm(publicUploads, { recursive: true, force: true });
+  await fsp.symlink(userUploads, publicUploads, "junction");
+}
+
+async function ensureNextServer() {
+  if (await isServerReady()) return;
+  if (app.isPackaged) {
+    const serverFile = path.join(getDesktopRuntimeRoot(), "server.js");
+    const serverLog = fs.openSync(path.join(app.getPath("userData"), "next-server.log"), "a");
+    nextProcess = spawn(process.execPath, [serverFile], {
+      cwd: path.dirname(serverFile),
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1",
+        WORKLOG_DESKTOP: "1",
+        HOSTNAME: "127.0.0.1",
+        PORT: String(APP_PORT),
+        DATABASE_URL: `postgresql://postgres@127.0.0.1:${DATABASE_PORT}/worklog_ultra`,
+        APP_BASE_URL: APP_URL,
+        AUTH_EMAIL_REDIRECT_TO: APP_URL,
+      },
+      windowsHide: true,
+      stdio: ["ignore", serverLog, serverLog],
+    });
+  } else {
+    const isWindows = process.platform === "win32";
+    const command = isWindows ? process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe" : "npm";
+    const args = isWindows ? ["/d", "/s", "/c", "npm.cmd run dev"] : ["run", "dev"];
+    nextProcess = spawn(command, args, {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, WORKLOG_DESKTOP: "1" },
+      windowsHide: true,
+      stdio: "ignore",
+    });
+  }
 
   for (let attempt = 0; attempt < 80; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (await isServerReady()) return;
   }
-  throw new Error("WorkLog dev server did not start.");
+  throw new Error("WorkLog web server did not start.");
 }
 
 /**
- * Packaged builds wait on the *remote* server instead — no process to spawn,
- * just patience for a connection. Retries for up to ~2 minutes so a slow or
- * momentarily flaky connection doesn't fail startup outright; the splash
- * window is what makes that wait visible instead of a blank app.
- */
-async function waitForRemoteServer() {
-  if (!app.isPackaged) return;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (await isServerReady()) return;
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  throw new Error(`Could not reach ${APP_URL}. Check your internet connection.`);
-}
-
-/**
- * Shown the instant Electron is ready, before the connectivity wait —
- * without it the app is a blank nothing for however long that check takes,
- * which is exactly what invites someone to double-click the icon again.
+ * Shown the instant Electron is ready, before Postgres/runtime bootstrap —
+ * without it the app is a blank nothing for however long first-run setup
+ * takes (tens of seconds), which is exactly what invites someone to
+ * double-click the icon again, spawning a second bootstrap racing the first.
  */
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
@@ -180,7 +304,7 @@ function createMainWindow() {
     closeSplashWindow();
     dialog.showErrorBox(
       "WorkLog connection failed",
-      `WorkLog server-এ সংযোগ করা যায়নি। Internet connection পরীক্ষা করে app আবার চালু করুন.\n\n${error.message}`,
+      `WorkLog server-এ সংযোগ করা যায়নি। Internet connection পরীক্ষা করে app আবার চালু করুন.\n\n${error.message}`,
     );
   });
 }
@@ -224,9 +348,10 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    // A relaunch during the connectivity wait lands here before mainWindow
-    // exists — focusing the splash instead of doing nothing is what tells
-    // the person their click registered, so they stop clicking again.
+    // A relaunch during the slow first-run bootstrap (Postgres init, web
+    // runtime extraction) lands here before mainWindow exists — focusing the
+    // splash instead of doing nothing is what tells the person their click
+    // registered, so they stop clicking again.
     const target = mainWindow ?? splashWindow;
     if (!target) return;
     if (mainWindow?.isMinimized()) mainWindow.restore();
@@ -238,8 +363,10 @@ if (!hasSingleInstanceLock) {
     writeDesktopLog("electron ready");
     app.setAppUserModelId("com.worklog.ultra");
     createSplashWindow();
-    await ensureDevServer();
-    await waitForRemoteServer();
+    await ensurePostgres();
+    await ensureDesktopRuntime();
+    await ensureDesktopUploads();
+    await ensureNextServer();
     createMainWindow();
     screenshotMonitor = createScreenshotMonitorInstance();
     // Backend is authoritative: this is what restores monitoring after a
@@ -266,5 +393,15 @@ app.on("before-quit", () => {
   // Signal the renderer to stop any running timers before app closes
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("app:quit");
+  }
+  if (app.isPackaged) {
+    const paths = getPostgresPaths();
+    const child = spawn(paths.pgCtl, ["stop", "-D", paths.data, "-m", "fast", "-w"], {
+      env: getPostgresEnvironment(paths),
+      windowsHide: true,
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
   }
 });
