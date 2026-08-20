@@ -218,10 +218,14 @@ function createScreenshotMonitor({ appUrl, storageRoot, log, onStatusChange }) {
       { metadata },
       { field: "screenshot", filename: `${item.id}.jpg`, contentType: "image/jpeg", data: buffer },
     );
+    // No explicit Content-Length: Electron's net.request computes it from
+    // the written body and throws net::ERR_INVALID_ARGUMENT if a caller
+    // sets it manually — this is what silently failed every upload before,
+    // since the capture itself succeeded and only this request rejected.
     return performRequest({
       method: "POST",
       url: `${appUrl}/api/dashboard/screenshots/upload`,
-      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}`, "Content-Length": String(body.length) },
+      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
       body,
     });
   }
