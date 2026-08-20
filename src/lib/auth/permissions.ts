@@ -49,6 +49,11 @@ export function canAccessWorkMonitor(user: UserWithAccess) {
   return user.role === UserRole.manager || user.role === UserRole.admin || hasExtraAccess(user, "work_monitor");
 }
 
+/** Screenshot monitoring evidence: Team Head (own department) and CEO/Admin (organisation) only. */
+export function canAccessScreenshotGallery(user: UserWithAccess) {
+  return user.role === UserRole.manager || user.role === UserRole.admin;
+}
+
 export function canPublishNotices(user: UserWithAccess) {
   return user.role === UserRole.admin || user.role === UserRole.manager || user.role === UserRole.hr || hasExtraAccess(user, "publish_notices");
 }

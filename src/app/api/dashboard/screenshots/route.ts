@@ -12,6 +12,7 @@ const PAGE_SIZE = 60;
 
 const querySchema = z.object({
   userId: z.string().uuid().optional(),
+  departmentId: z.string().uuid().optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   cursor: z.string().uuid().optional(),
@@ -60,10 +61,18 @@ export async function GET(request: NextRequest) {
     capturedAt.lte = new Date(`${parsed.data.to}T23:59:59.999Z`);
   }
 
+  // A `departmentId` filter only ever narrows an "all" (admin) scope. A
+  // viewer already scoped to one department has that scope's own
+  // `departmentId` clause as the most specific filter possible already, so
+  // this is a no-op for them rather than a second `departmentId` key that
+  // would silently overwrite — not narrow — the scope filter below.
+  const departmentFilter = scope.kind === "all" && parsed.data.departmentId ? { departmentId: parsed.data.departmentId } : {};
+
   const screenshots = await db.screenshot.findMany({
     where: {
       // Scope first, and never spread anything caller-controlled over it.
       ...screenshotScopeFilter(scope),
+      ...departmentFilter,
       ...(parsed.data.userId ? { userId: parsed.data.userId } : {}),
       ...(capturedAt.gte || capturedAt.lte ? { capturedAt } : {}),
       uploadStatus: ScreenshotUploadStatus.uploaded,

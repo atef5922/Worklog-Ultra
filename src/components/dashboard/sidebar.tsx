@@ -4,7 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, BriefcaseBusiness, CalendarCheck2, ChevronLeft, ChevronRight, CheckSquare2, ClipboardList, FileClock, FolderTree, LayoutDashboard, LogOut, Menu, Settings, Shield, UserRoundSearch, Users, X } from "lucide-react";
+import { BellRing, BriefcaseBusiness, Camera, CalendarCheck2, ChevronLeft, ChevronRight, CheckSquare2, ClipboardList, FileClock, FolderTree, LayoutDashboard, LogOut, Menu, Settings, Shield, UserRoundSearch, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ const navItems = [
   { href: "/dashboard/assignments", icon: CheckSquare2, label: "Assignments" },
   { href: "/dashboard/notices", icon: BellRing, label: "Notices" },
   { href: "/dashboard/directory", icon: UserRoundSearch, label: "Work Monitor" },
+  { href: "/dashboard/screenshots", icon: Camera, label: "Screenshots" },
   { href: "/dashboard/team", icon: Users, label: "Team" },
   { href: "/admin", icon: Shield, label: "Admin" },
   { href: "/admin/departments", icon: FolderTree, label: "Departments" },
@@ -166,10 +167,11 @@ function SidebarContent({
             item.href === "/dashboard/directory" &&
             !["manager", "admin"].includes(user.role) &&
             !user.extraAccess?.includes("work_monitor");
+          const hiddenScreenshots = item.href === "/dashboard/screenshots" && !["manager", "admin"].includes(user.role);
           const hiddenForAdminWorkerFlow = false;
           const hiddenRequestInboxForAdmin = false;
 
-          if (hiddenForEmployee || hiddenDepartments || hiddenForTeam || hiddenWorkMonitor || hiddenForAdminWorkerFlow || hiddenRequestInboxForAdmin) return null;
+          if (hiddenForEmployee || hiddenDepartments || hiddenForTeam || hiddenWorkMonitor || hiddenScreenshots || hiddenForAdminWorkerFlow || hiddenRequestInboxForAdmin) return null;
 
           const linkNode = (
             <motion.div
