@@ -95,6 +95,10 @@
       {
         "from": "desktop-runtime/schema.sql",
         "to": "database-schema.sql"
+      },
+      {
+        "from": "prisma/migrations/0004_screenshot_monitoring/migration.sql",
+        "to": "screenshot-monitoring-schema.sql"
       }
     ],
     "win": {

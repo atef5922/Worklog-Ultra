@@ -92,6 +92,7 @@ function getPostgresPaths() {
     psql: path.join(root, "bin", "psql.exe"),
     createdb: path.join(root, "bin", "createdb.exe"),
     schema: path.join(process.resourcesPath, "database-schema.sql"),
+    screenshotSchema: path.join(process.resourcesPath, "screenshot-monitoring-schema.sql"),
   };
 }
 
@@ -130,7 +131,36 @@ async function ensurePostgres() {
     await runProcess(paths.psql, ["-d", "worklog_ultra", "-v", "ON_ERROR_STOP=1", "-f", paths.schema], { env });
     await fsp.writeFile(schemaMarker, new Date().toISOString(), "utf8");
   }
+
+  await ensureScreenshotMonitoringSchema(paths, env);
   writeDesktopLog("private PostgreSQL database ready");
+}
+
+/**
+ * `database-schema.sql` is a one-time snapshot bundled into the app; it goes
+ * stale the moment the Prisma schema gains a migration after that snapshot
+ * was taken; a marker-file guard like the one above (`worklog-schema-v1.ready`,
+ * "have we ever run this") can't detect that drift and silently leaves an
+ * existing install missing whatever came after — which is exactly what
+ * happened to the screenshots/devices tables the first time this shipped.
+ * Checking the database's actual current state instead of a marker is what
+ * makes this self-healing: it applies the migration exactly once, on
+ * whichever install (fresh or upgraded) is actually missing it, and is a
+ * no-op forever after on databases that already have it.
+ */
+async function ensureScreenshotMonitoringSchema(paths, env) {
+  const hasScreenshotsTable = await runProcess(
+    paths.psql,
+    ["-d", "worklog_ultra", "-tAc", "SELECT 1 FROM information_schema.tables WHERE table_name = 'screenshots'"],
+    { env },
+  )
+    .then(({ stdout }) => stdout.trim() === "1")
+    .catch(() => false);
+  if (hasScreenshotsTable) return;
+
+  writeDesktopLog("applying screenshot monitoring schema");
+  await runProcess(paths.psql, ["-d", "worklog_ultra", "-v", "ON_ERROR_STOP=1", "-f", paths.screenshotSchema], { env });
+  writeDesktopLog("screenshot monitoring schema ready");
 }
 
 function getDesktopRuntimeRoot() {
