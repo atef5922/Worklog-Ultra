@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const http = require("node:http");
@@ -12,6 +13,7 @@ const APP_URL = process.env.WORKLOG_APP_URL || (app.isPackaged ? `http://127.0.0
 const APP_ORIGIN = new URL(APP_URL).origin;
 
 let mainWindow;
+let splashWindow;
 let nextProcess;
 let screenshotMonitor;
 
@@ -135,19 +137,46 @@ function getDesktopRuntimeRoot() {
   return path.join(app.getPath("userData"), `app-runtime-${app.getVersion()}`);
 }
 
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
+/**
+ * Extraction is cached by the *content* of the bundled archive, not just the
+ * app version. Two installs can legitimately share a version number during
+ * iterative testing (or a hotfix rebuild that forgot to bump it) — keying
+ * the cache on version alone left a stale extracted web app silently served
+ * forever after such a rebuild, with the new Electron shell calling APIs
+ * the old cached server didn't have. The hash marker makes that impossible:
+ * any change to the bundled archive is a cache miss regardless of version.
+ */
 async function ensureDesktopRuntime() {
   if (!app.isPackaged) return;
   const runtimeRoot = getDesktopRuntimeRoot();
-  if (fs.existsSync(path.join(runtimeRoot, "server.js")) && fs.existsSync(path.join(runtimeRoot, "node_modules", "next"))) return;
+  const archivePath = path.join(process.resourcesPath, "app-runtime.7z");
+  const hashMarkerPath = path.join(runtimeRoot, ".archive-hash");
+  const bundledHash = await hashFile(archivePath);
+  const cachedHash = await fsp.readFile(hashMarkerPath, "utf8").then((value) => value.trim()).catch(() => null);
+  const runtimeFilesPresent =
+    fs.existsSync(path.join(runtimeRoot, "server.js")) && fs.existsSync(path.join(runtimeRoot, "node_modules", "next"));
 
-  writeDesktopLog(`extracting latest UI runtime ${app.getVersion()}`);
+  if (runtimeFilesPresent && cachedHash === bundledHash) return;
+
+  writeDesktopLog(`extracting latest UI runtime ${app.getVersion()} (${bundledHash.slice(0, 12)})`);
   await fsp.rm(runtimeRoot, { recursive: true, force: true });
   await fsp.mkdir(runtimeRoot, { recursive: true });
   await runProcess(
     path.join(process.resourcesPath, "7za.exe"),
-    ["x", path.join(process.resourcesPath, "app-runtime.7z"), `-o${runtimeRoot}`, "-y"],
+    ["x", archivePath, `-o${runtimeRoot}`, "-y"],
   );
   if (!fs.existsSync(path.join(runtimeRoot, "server.js"))) throw new Error("Latest UI runtime extraction failed.");
+  await fsp.writeFile(hashMarkerPath, bundledHash, "utf8");
   writeDesktopLog("latest UI runtime ready");
 }
 
@@ -202,6 +231,46 @@ async function ensureNextServer() {
   throw new Error("WorkLog web server did not start.");
 }
 
+/**
+ * Shown the instant Electron is ready, before Postgres/runtime bootstrap —
+ * without it the app is a blank nothing for however long first-run setup
+ * takes (tens of seconds), which is exactly what invites someone to
+ * double-click the icon again, spawning a second bootstrap racing the first.
+ */
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 360,
+    height: 220,
+    frame: false,
+    resizable: false,
+    movable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: "#000080",
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  splashWindow.loadURL(
+    "data:text/html;charset=utf-8," +
+      encodeURIComponent(`<!doctype html><html><head><style>
+        html,body{margin:0;height:100%;background:linear-gradient(160deg,#000080 0%,#001f66 55%,#020b31 100%);
+          display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;
+          font-family:Segoe UI,Arial,sans-serif;color:#f8fbff;}
+        .spinner{width:32px;height:32px;border-radius:50%;border:3px solid rgba(248,251,255,0.25);
+          border-top-color:#35d39a;animation:spin 0.8s linear infinite;}
+        @keyframes spin{to{transform:rotate(360deg);}}
+        p{margin:0;font-size:13px;letter-spacing:0.02em;opacity:0.9;}
+      </style></head><body>
+        <div class="spinner"></div>
+        <p>Starting WorkLog Ultra...</p>
+      </body></html>`),
+  );
+}
+
+function closeSplashWindow() {
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+  splashWindow = null;
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -217,7 +286,10 @@ function createMainWindow() {
       nodeIntegration: false,
     },
   });
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("ready-to-show", () => {
+    closeSplashWindow();
+    mainWindow?.show();
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedAppUrl(url)) return { action: "allow" };
     openExternalHttpUrl(url);
@@ -229,6 +301,7 @@ function createMainWindow() {
     openExternalHttpUrl(url);
   });
   mainWindow.loadURL(APP_URL).catch((error) => {
+    closeSplashWindow();
     dialog.showErrorBox(
       "WorkLog connection failed",
       `WorkLog server-এ সংযোগ করা যায়নি। Internet connection পরীক্ষা করে app আবার চালু করুন.\n\n${error.message}`,
@@ -275,15 +348,21 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    // A relaunch during the slow first-run bootstrap (Postgres init, web
+    // runtime extraction) lands here before mainWindow exists — focusing the
+    // splash instead of doing nothing is what tells the person their click
+    // registered, so they stop clicking again.
+    const target = mainWindow ?? splashWindow;
+    if (!target) return;
+    if (mainWindow?.isMinimized()) mainWindow.restore();
+    target.show();
+    target.focus();
   });
 
   app.whenReady().then(async () => {
     writeDesktopLog("electron ready");
     app.setAppUserModelId("com.worklog.ultra");
+    createSplashWindow();
     await ensurePostgres();
     await ensureDesktopRuntime();
     await ensureDesktopUploads();
@@ -298,6 +377,7 @@ if (!hasSingleInstanceLock) {
   }).catch((error) => {
     writeDesktopLog(`startup failed: ${error instanceof Error ? error.stack || error.message : String(error)}`);
     console.error("WorkLog Electron startup failed:", error);
+    closeSplashWindow();
     dialog.showErrorBox("WorkLog startup failed", error instanceof Error ? error.stack || error.message : String(error));
     app.quit();
   });
