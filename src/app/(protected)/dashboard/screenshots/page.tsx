@@ -26,14 +26,34 @@ export default async function ScreenshotsPage() {
         ...(isAdmin ? {} : { departmentId: user.departmentId }),
       },
       orderBy: [{ name: "asc" }],
-      select: { id: true, name: true, departmentId: true },
+      select: {
+        id: true,
+        name: true,
+        departmentId: true,
+        // Latest heartbeat only — this is what lets the gallery show "agent
+        // online/last seen" without a second client-side fetch. The desktop
+        // agent pings this independently of captures (see
+        // screenshots/heartbeat/route.ts), so it reflects "app is running"
+        // even before that employee's first screenshot of the day exists.
+        devices: {
+          orderBy: { lastSeenAt: "desc" },
+          take: 1,
+          select: { lastSeenAt: true, hostname: true, platform: true },
+        },
+      },
     }),
   ]);
 
   return (
     <ScreenshotGallery
       departments={departments}
-      employees={employees.map((employee) => ({ id: employee.id, name: employee.name, departmentId: employee.departmentId }))}
+      employees={employees.map((employee) => ({
+        id: employee.id,
+        name: employee.name,
+        departmentId: employee.departmentId,
+        lastSeenAt: employee.devices[0]?.lastSeenAt?.toISOString() ?? null,
+        deviceLabel: employee.devices[0]?.hostname ?? employee.devices[0]?.platform ?? null,
+      }))}
       isAdmin={isAdmin}
     />
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, Camera, ImageOff, Loader2, MonitorSmartphone, X } from "lucide-react";
+import { AlertTriangle, Camera, Circle, ImageOff, Loader2, MonitorSmartphone, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatDateTimeInDhaka, toDateOnly } from "@/lib/utils";
 
 type FilterDepartment = { id: string; name: string };
-type FilterEmployee = { id: string; name: string; departmentId: string | null };
+type FilterEmployee = { id: string; name: string; departmentId: string | null; lastSeenAt: string | null; deviceLabel: string | null };
+
+/**
+ * How long since the desktop agent's last heartbeat before it reads as
+ * offline. The agent pings every 60s (see screenshot-monitor.cjs), so this
+ * tolerates two missed pings before flipping — enough to absorb an ordinary
+ * network hiccup without flickering, not so much that a closed app still
+ * reads as online.
+ */
+const ONLINE_THRESHOLD_MS = 3 * 60 * 1000;
+
+function formatRelativeTime(value: string, nowMs: number) {
+  const then = new Date(value).getTime();
+  const diffSeconds = Math.max(0, Math.round((nowMs - then) / 1000));
+  if (diffSeconds < 60) return "just now";
+  const diffMinutes = Math.round(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.round(diffHours / 24)}d ago`;
+}
 
 type ScreenshotItem = {
   id: string;
@@ -56,11 +76,32 @@ export function ScreenshotGallery({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxId, setLightboxId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  // Ticks the online/offline read-out and its "Xm ago" text without a
+  // network round trip — the underlying heartbeat data is already in
+  // `employees` from the page load, this just keeps its age from going stale
+  // on a gallery left open for a while.
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const scopedEmployees = useMemo(() => {
     if (!isAdmin || selectedDepartmentId === "all") return employees;
     return employees.filter((employee) => employee.departmentId === selectedDepartmentId);
   }, [employees, isAdmin, selectedDepartmentId]);
+
+  const selectedEmployee = useMemo(
+    () => (selectedUserId === "all" ? null : (employees.find((employee) => employee.id === selectedUserId) ?? null)),
+    [employees, selectedUserId],
+  );
+
+  const agentStatus = useMemo(() => {
+    if (!selectedEmployee?.lastSeenAt) return null;
+    const online = nowMs - new Date(selectedEmployee.lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
+    return { online, lastSeenLabel: formatRelativeTime(selectedEmployee.lastSeenAt, nowMs) };
+  }, [selectedEmployee, nowMs]);
 
   function buildQuery(cursor?: string) {
     const params = new URLSearchParams();
@@ -195,6 +236,21 @@ export function ScreenshotGallery({
             </div>
           </div>
         </div>
+        {selectedEmployee ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--panel-border)] bg-[var(--panel-muted)] px-4 py-2.5 text-xs">
+            <span
+              className={`inline-flex items-center gap-1.5 font-semibold ${agentStatus?.online ? "text-emerald-600" : "text-slate-500"}`}
+            >
+              <Circle className={`h-2 w-2 ${agentStatus?.online ? "fill-emerald-500 text-emerald-500" : "fill-slate-400 text-slate-400"}`} />
+              Monitoring Agent: {agentStatus?.online ? "Online" : "Offline"}
+            </span>
+            <span className="text-[var(--muted-foreground)]">
+              {agentStatus
+                ? `Last seen ${agentStatus.lastSeenLabel}${selectedEmployee.deviceLabel ? ` · ${selectedEmployee.deviceLabel}` : ""}`
+                : "No heartbeat received from this employee's desktop app yet."}
+            </span>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {loading ? (
