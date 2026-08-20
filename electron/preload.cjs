@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld("worklogDesktop", {
     ipcRenderer.on("app:quit", listener);
     return () => ipcRenderer.removeListener("app:quit", listener);
   },
+  saveCredentials: (email, password) => ipcRenderer.invoke("credentials:save", { email, password }),
+  loadCredentials: () => ipcRenderer.invoke("credentials:load"),
+  clearCredentials: () => ipcRenderer.invoke("credentials:clear"),
 });

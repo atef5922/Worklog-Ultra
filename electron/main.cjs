@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -92,7 +92,6 @@ function getPostgresPaths() {
     psql: path.join(root, "bin", "psql.exe"),
     createdb: path.join(root, "bin", "createdb.exe"),
     schema: path.join(process.resourcesPath, "database-schema.sql"),
-    screenshotSchema: path.join(process.resourcesPath, "screenshot-monitoring-schema.sql"),
   };
 }
 
@@ -132,7 +131,7 @@ async function ensurePostgres() {
     await fsp.writeFile(schemaMarker, new Date().toISOString(), "utf8");
   }
 
-  await ensureScreenshotMonitoringSchema(paths, env);
+  await applyPendingSchemaPatches(paths, env);
   writeDesktopLog("private PostgreSQL database ready");
 }
 
@@ -143,24 +142,40 @@ async function ensurePostgres() {
  * "have we ever run this") can't detect that drift and silently leaves an
  * existing install missing whatever came after — which is exactly what
  * happened to the screenshots/devices tables the first time this shipped.
- * Checking the database's actual current state instead of a marker is what
- * makes this self-healing: it applies the migration exactly once, on
- * whichever install (fresh or upgraded) is actually missing it, and is a
- * no-op forever after on databases that already have it.
+ *
+ * Each patch checks the database's *actual current state* instead of a
+ * marker, which is what makes this self-healing: it applies exactly once,
+ * on whichever install (fresh or upgraded) actually needs it, and is a
+ * no-op forever after on a database that already has it — regardless of
+ * app version. Add one entry here per migration shipped after the bundled
+ * snapshot; each `check` should read false only when that migration's
+ * effect is genuinely missing.
  */
-async function ensureScreenshotMonitoringSchema(paths, env) {
-  const hasScreenshotsTable = await runProcess(
-    paths.psql,
-    ["-d", "worklog_ultra", "-tAc", "SELECT 1 FROM information_schema.tables WHERE table_name = 'screenshots'"],
-    { env },
-  )
-    .then(({ stdout }) => stdout.trim() === "1")
-    .catch(() => false);
-  if (hasScreenshotsTable) return;
+const SCHEMA_PATCHES = [
+  {
+    label: "screenshot monitoring schema",
+    check: "SELECT 1 FROM information_schema.tables WHERE table_name = 'screenshots'",
+    file: "screenshot-monitoring-schema.sql",
+  },
+  {
+    label: "screenshot log survives delete",
+    check:
+      "SELECT 1 FROM information_schema.columns WHERE table_name = 'screenshot_access_logs' AND column_name = 'screenshot_id' AND is_nullable = 'YES'",
+    file: "screenshot-log-nullable-schema.sql",
+  },
+];
 
-  writeDesktopLog("applying screenshot monitoring schema");
-  await runProcess(paths.psql, ["-d", "worklog_ultra", "-v", "ON_ERROR_STOP=1", "-f", paths.screenshotSchema], { env });
-  writeDesktopLog("screenshot monitoring schema ready");
+async function applyPendingSchemaPatches(paths, env) {
+  for (const patch of SCHEMA_PATCHES) {
+    const alreadyApplied = await runProcess(paths.psql, ["-d", "worklog_ultra", "-tAc", patch.check], { env })
+      .then(({ stdout }) => stdout.trim() === "1")
+      .catch(() => false);
+    if (alreadyApplied) continue;
+
+    writeDesktopLog(`applying schema patch: ${patch.label}`);
+    await runProcess(paths.psql, ["-d", "worklog_ultra", "-v", "ON_ERROR_STOP=1", "-f", path.join(process.resourcesPath, patch.file)], { env });
+    writeDesktopLog(`schema patch ready: ${patch.label}`);
+  }
 }
 
 function getDesktopRuntimeRoot() {
@@ -371,6 +386,50 @@ ipcMain.handle("screenshot:stop", (_event, input = {}) => {
 ipcMain.handle("screenshot:pause", () => screenshotMonitor?.pause() ?? IDLE_STATUS);
 ipcMain.handle("screenshot:resume", () => screenshotMonitor?.resume() ?? IDLE_STATUS);
 ipcMain.handle("screenshot:status", () => screenshotMonitor?.getStatus() ?? IDLE_STATUS);
+
+function getCredentialsFilePath() {
+  return path.join(app.getPath("userData"), "remembered-credentials.json");
+}
+
+/**
+ * "Remember me" persisting only the email (never the password) was the
+ * actual bug: a bare Electron BrowserWindow has no built-in password-save
+ * prompt — that UI is a Google Chrome feature, not part of Chromium/Electron
+ * itself — so there was never any mechanism that could have remembered it.
+ * `safeStorage` encrypts with the OS's own credential store (DPAPI on
+ * Windows, Keychain on macOS), so the password is never written to disk in
+ * plain text; only the login form (via preload) ever sees it decrypted.
+ */
+ipcMain.handle("credentials:save", (_event, input = {}) => {
+  const email = String(input.email || "");
+  const password = String(input.password || "");
+  if (!email || !password || !safeStorage.isEncryptionAvailable()) return { ok: false };
+  try {
+    const encrypted = safeStorage.encryptString(password).toString("base64");
+    fs.writeFileSync(getCredentialsFilePath(), JSON.stringify({ email, password: encrypted }), "utf8");
+    return { ok: true };
+  } catch (error) {
+    writeDesktopLog(`credentials save failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { ok: false };
+  }
+});
+
+ipcMain.handle("credentials:load", () => {
+  try {
+    const raw = fs.readFileSync(getCredentialsFilePath(), "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed?.email || !parsed?.password || !safeStorage.isEncryptionAvailable()) return null;
+    const password = safeStorage.decryptString(Buffer.from(parsed.password, "base64"));
+    return { email: parsed.email, password };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("credentials:clear", () => {
+  fs.rmSync(getCredentialsFilePath(), { force: true });
+  return { ok: true };
+});
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 writeDesktopLog(`startup packaged=${app.isPackaged} url=${APP_URL} singleInstance=${hasSingleInstanceLock}`);

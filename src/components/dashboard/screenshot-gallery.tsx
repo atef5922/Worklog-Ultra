@@ -1,8 +1,9 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, Camera, Circle, ImageOff, Loader2, MonitorSmartphone, X } from "lucide-react";
+import { AlertTriangle, Camera, Circle, ImageOff, Loader2, MonitorSmartphone, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -76,6 +77,7 @@ export function ScreenshotGallery({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxId, setLightboxId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Ticks the online/offline read-out and its "Xm ago" text without a
@@ -162,6 +164,26 @@ export function ScreenshotGallery({
   }, [selectedUserId, selectedDepartmentId, fromDate, toDate]);
 
   const activeShot = screenshots.find((item) => item.id === lightboxId) ?? null;
+
+  async function handleDelete(id: string) {
+    if (!window.confirm("Permanently delete this screenshot? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      const response = await fetch(`/api/dashboard/screenshots/${id}`, { method: "DELETE" });
+      const result = (await response.json()) as { success: boolean; message?: string };
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Screenshot could not be deleted.");
+        return;
+      }
+      setScreenshots((current) => current.filter((item) => item.id !== id));
+      setLightboxId(null);
+      toast.success("Screenshot deleted.");
+    } catch {
+      toast.error("Screenshot could not be deleted. Check your connection and try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <Card>
@@ -331,15 +353,29 @@ export function ScreenshotGallery({
                       <span>{formatFileSize(activeShot.fileSize)}</span>
                     </p>
                   </div>
-                  <Dialog.Close asChild>
-                    <button
-                      aria-label="Close screenshot preview"
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                      type="button"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </Dialog.Close>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {isAdmin ? (
+                      <button
+                        aria-label="Delete screenshot"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+                        disabled={deletingId === activeShot.id}
+                        onClick={() => void handleDelete(activeShot.id)}
+                        type="button"
+                      >
+                        {deletingId === activeShot.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        Delete
+                      </button>
+                    ) : null}
+                    <Dialog.Close asChild>
+                      <button
+                        aria-label="Close screenshot preview"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                        type="button"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </Dialog.Close>
+                  </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto bg-slate-950/5 p-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

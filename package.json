@@ -99,6 +99,10 @@
       {
         "from": "prisma/migrations/0004_screenshot_monitoring/migration.sql",
         "to": "screenshot-monitoring-schema.sql"
+      },
+      {
+        "from": "prisma/migrations/0005_screenshot_log_survives_delete/migration.sql",
+        "to": "screenshot-log-nullable-schema.sql"
       }
     ],
     "win": {

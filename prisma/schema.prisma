@@ -365,13 +365,17 @@ model Screenshot {
 /// reads are themselves auditable events.
 model ScreenshotAccessLog {
   id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  screenshotId String                @map("screenshot_id") @db.Uuid
+  /// Nullable on purpose: a `deleted` log entry documents the deletion
+  /// itself, so it must outlive the screenshot row it points at. `SetNull`
+  /// (not `Cascade`) is what makes that possible — cascading here would
+  /// erase the very record of the deletion the moment it happens.
+  screenshotId String?               @map("screenshot_id") @db.Uuid
   viewerUserId String                @map("viewer_user_id") @db.Uuid
   action       ScreenshotAuditAction
   ipAddress    String?               @map("ip_address")
   userAgent    String?               @map("user_agent")
   createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  screenshot   Screenshot            @relation(fields: [screenshotId], references: [id], onDelete: Cascade)
+  screenshot   Screenshot?           @relation(fields: [screenshotId], references: [id], onDelete: SetNull)
   viewer       User                  @relation(fields: [viewerUserId], references: [id], onDelete: Cascade)
 
   @@index([screenshotId, createdAt])

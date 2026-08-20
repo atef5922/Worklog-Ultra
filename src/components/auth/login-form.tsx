@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +29,25 @@ export function LoginForm({ variant = "default" }: { variant?: "default" | "mini
   const [errorMessage, setErrorMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState(() => getRememberedEmail());
+  const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(() => Boolean(getRememberedEmail()));
   const isMinimal = variant === "minimal";
+
+  // Desktop only: a bare Electron window has no Chrome-style "save
+  // password?" prompt (that UI belongs to Chrome itself, not Chromium), so
+  // "remember me" could never have remembered a password through the
+  // browser — it needs the app to store one itself. The browser/web path
+  // below keeps remembering only the email and relies on the browser's own
+  // password manager, which does exist there.
+  useEffect(() => {
+    if (!window.worklogDesktop?.isDesktop) return;
+    void window.worklogDesktop.loadCredentials().then((saved) => {
+      if (!saved) return;
+      setEmail(saved.email);
+      setPassword(saved.password);
+      setRememberMe(true);
+    });
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,7 +75,13 @@ export function LoginForm({ variant = "default" }: { variant?: "default" | "mini
       return;
     }
 
-    if (payload.remember) {
+    if (window.worklogDesktop?.isDesktop) {
+      if (payload.remember) {
+        void window.worklogDesktop.saveCredentials(payload.email, payload.password);
+      } else {
+        void window.worklogDesktop.clearCredentials();
+      }
+    } else if (payload.remember) {
       window.localStorage.setItem(REMEMBERED_EMAIL_STORAGE_KEY, payload.email);
     } else {
       window.localStorage.removeItem(REMEMBERED_EMAIL_STORAGE_KEY);
@@ -71,7 +94,7 @@ export function LoginForm({ variant = "default" }: { variant?: "default" | "mini
   }
 
   return (
-    <form onSubmit={onSubmit} className={cn("space-y-4", isMinimal && "space-y-5")}>
+    <form autoComplete="on" onSubmit={onSubmit} className={cn("space-y-4", isMinimal && "space-y-5")}>
       <div className="space-y-2">
         <Label className={cn(isMinimal && "mb-1 text-[13px] font-medium text-slate-700")}>Email</Label>
         <div className="relative">
@@ -82,6 +105,7 @@ export function LoginForm({ variant = "default" }: { variant?: "default" | "mini
             )}
           />
           <Input
+            autoComplete="username"
             className={cn(
               "h-10 rounded-xl pl-9",
               isMinimal &&
@@ -108,13 +132,18 @@ export function LoginForm({ variant = "default" }: { variant?: "default" | "mini
             )}
           />
           <Input
+            autoComplete="current-password"
             className={cn(
               "h-10 rounded-xl pl-9 pr-10",
               isMinimal &&
                 "h-11 rounded-lg border border-slate-700/45 bg-white/16 px-3 pl-11 pr-11 text-base text-slate-900 placeholder:text-slate-600 shadow-none transition-colors hover:border-slate-800/70 focus:border-slate-900",
             )}
             name="password"
-            onChange={() => setErrorMessage("")}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              setErrorMessage("");
+            }}
+            value={password}
             type={showPassword ? "text" : "password"}
             placeholder="Password"
           />
@@ -154,6 +183,7 @@ export function LoginForm({ variant = "default" }: { variant?: "default" | "mini
 
               if (!nextRememberMe) {
                 window.localStorage.removeItem(REMEMBERED_EMAIL_STORAGE_KEY);
+                if (window.worklogDesktop?.isDesktop) void window.worklogDesktop.clearCredentials();
               }
             }}
             type="checkbox"
